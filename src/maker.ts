@@ -279,9 +279,34 @@ class GenesisMaker {
   }
 }
 
-// --- 统一入口 ---
-export const Maker = {
-  configure: (config: GenesisConfig) => new GenesisMaker().configure(config),
-  case: (...args: any[]) => (new GenesisMaker() as any).case(...args),
-  cases: (count: number, generator: () => any) => new GenesisMaker().cases(count, generator),
+// 1. 直接导出 GenesisMaker 类本身
+export { GenesisMaker };
+
+// 2. (可选) 提供一个清晰的工厂函数，作为语法糖
+export function createMaker(): GenesisMaker {
+    return new GenesisMaker();
+}
+
+// 3. (推荐) 使用 Proxy 提供一个更灵活的统一入口
+const handler: ProxyHandler<any> = {
+  /**
+   * 当访问 maker.case 或 maker.configure 等属性时，这个 get 陷阱会被触发
+   */
+  get(target, prop, receiver) {
+    // 每次访问，我们都创建一个全新的 GenesisMaker 实例
+    const instance = new GenesisMaker();
+
+    // 我们检查用户想要的属性 (比如 'case') 是否是这个新实例上的一个函数
+    const method = (instance as any)[prop];
+    if (typeof method === 'function') {
+      // 如果是，我们就返回这个函数，并确保它的 this 指向我们刚创建的实例
+      return method.bind(instance);
+    }
+
+    // 如果访问的不是一个方法，就按默认行为处理
+    return Reflect.get(target, prop, receiver);
+  },
 };
+
+// --- 统一入口 ---
+export const Maker = new Proxy({}, handler) as GenesisMaker;
