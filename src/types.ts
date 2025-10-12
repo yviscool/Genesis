@@ -24,6 +24,13 @@ export interface GenesisConfig {
   startFrom?: number;
 
   /**
+   * 指定要使用的 C++ 编译器命令。
+   * 如果不指定，Genesis 会自动探测 'g++' 或 'clang++'。
+   * @example 'g++-12'
+   */
+  compiler?: string;
+
+  /**
    * 传递给 C++ 编译器的额外标志。
    * @default ['-O2', '-std=c++17']
    */
