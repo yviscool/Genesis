@@ -1,15 +1,9 @@
-好的，这是为您精心编写的、反映了我们所有讨论成果的最终版 `README.md`。它包含了清晰的安装指南、完整的 API 参考、以及对核心“智能格式化”设计哲学的深入阐述，确保任何用户都能快速上手并充分利用 Genesis 的强大功能。
-
------
-
 # Genesis: 为算法竞赛而生的测试数据生成器
 
 [](https://www.google.com/search?q=https://www.npmjs.com/package/genesis-kit)
 [](https://www.google.com/search?q=https://github.com/yviscool/genesis/blob/main/LICENSE)
 
 **Genesis** 是一个为算法竞赛出题人、选手和教练量身打造的、极其简单易用的测试数据生成工具。它将繁琐的编译、数据生成、文件 I/O 流程自动化，让你能专注于**数据本身的设计**，而非过程的实现。
-
-告别手写 `freopen` 和复杂的 `bash` 脚本，用现代 TypeScript 语法，以声明式的方式优雅地创造高质量的测试数据。
 
 ## ✨ 核心特性
 
@@ -31,7 +25,7 @@
 ```bash
 bun add genesis-kit --dev
 # 或者使用 npm / yarn / pnpm
-# npm install genesis-ac --save-dev
+# npm install genesis-kit --save-dev
 ```
 
 ### 2\. 编写你的第一个 `make.ts`
@@ -102,20 +96,72 @@ Genesis 会：
 
 ### `Maker` API
 
-`Maker` 是 Genesis 的主入口，采用链式调用设计。
+`Maker` 是 `Genesis` 的主入口，采用链式调用设计。整个流程的核心是定义一系列的测试用例（Test Cases），然后启动生成。
 
-  * `.configure(config: GenesisConfig)`: (可选) 配置 Genesis 的行为。
-    ```typescript
-    Maker.configure({
-      solution: 'main.cpp',   // 指定标程文件名
-      outputDir: 'testdata',  // 指定输出目录
-      compiler: 'g++-12',     // 指定编译器
-    });
-    ```
-  * `.case(label: string, generator: () => any)`: 定义一个带标签的测试用例。
-  * `.case(generator: () => any)`: 定义一个匿名测试用例。
-  * `.cases(count: number, generator: () => any)`: 批量定义多个相似的测试用例。
-  * `.generate(): Promise<void>`: **必须在链式调用的末尾调用**，它会启动整个生成流程。
+#### **定义测试点: `.case()` 与 `.cases()`**
+
+这是 `Genesis` 最核心的两个方法，用于定义你想要生成的测试数据。
+
+##### **`.case()`: 创建一个独立的测试点**
+
+每次调用 `.case()` 都会向生成队列中添加**一个**测试任务。最终，这会生成**一组**对应的输入/输出文件（例如 `1.in` 和 `1.out`）。
+
+你提供的生成器函数 `generator` 的返回值，构成了这**一个** `.in` 文件的**全部内容**。
+
+```typescript
+// 语法
+.case(label: string, generator: () => any) // 带标签，用于在日志中区分
+.case(generator: () => any)                // 匿名
+
+// 示例
+Maker
+  .case('Sample 1', () => { /* ... */ }) // -> 将生成 1.in / 1.out
+  .case('Edge Case', () => { /* ... */ }) // -> 将生成 2.in / 2.out
+```
+
+##### **`.cases()`: 批量创建多个相似的测试点**
+
+`.cases(N, generator)` 是一个便捷的 API，它等同于将同一个 `generator` 调用 `N` 次的 `.case()`。
+
+这会向队列中添加 **N 个**独立的测试任务，最终生成 **N 组**文件（例如从 `3.in`/`3.out` 一直到 `7.in`/`7.out`）。
+
+生成器函数 `generator` 会被**独立执行 N 次**，每次的执行结果都将用于创建一个全新的 `.in` 文件，确保了数据的随机性和多样性。
+
+```typescript
+// 语法
+.cases(count: number, generator: () => any)
+
+// 示例
+Maker
+  .case('Sample', () => { /* ... */ })       // -> 生成 1.in / 1.out
+  .cases(5, () => {
+    // 这个函数会被独立执行 5 次
+    const a = G.int(1, 100);
+    const b = G.int(1, 100);
+    return [[a, b]];
+  })                                       // -> 依次生成 2.in/out, 3.in/out, 4.in/out, 5.in/out, 6.in/out
+```
+
+-----
+
+#### **配置与启动**
+
+##### **`.configure(config: GenesisConfig)`**
+
+在调用链的**任意位置**（通常是开头）使用，用于对 `Genesis` 的默认行为进行配置。这是一个可选步骤。
+
+```typescript
+Maker.configure({
+  solution: 'main.cpp',   // 指定标程文件名 (默认: 'std.cpp')
+  outputDir: 'testdata',  // 指定输出目录 (默认: 'data')
+  compiler: 'g++-12',     // 手动指定编译器 (默认: 自动探测 g++ 或 clang++)
+  startFrom: 1,           // 文件编号起始值 (默认: 1)
+});
+```
+
+##### **`.generate(): Promise<void>`**
+
+**必须在链式调用的末尾调用**。它会启动整个自动化流程：编译、生成、运行标程、保存文件。
 
 ### `G` (Generator) API
 
