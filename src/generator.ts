@@ -88,6 +88,46 @@ export const G = {
     return parseFloat(value.toFixed(precision));
   },
 
+    /**
+   * (本次新增) 生成一个 [min, max] 范围内的随机偶数。
+   * @param min 最小值
+   * @param max 最大值
+   * @returns {number} 一个随机偶数
+   * @example
+   * G.even(1, 100)
+   * // => 52
+   */
+  even(min: number, max: number): number {
+    const start = min % 2 === 0 ? min : min + 1;
+    const end = max % 2 === 0 ? max : max - 1;
+    if (start > end) {
+      throw new Error(`No even numbers exist in the range [${min}, ${max}].`);
+    }
+    const numChoices = (end - start) / 2;
+    const choice = this.int(0, numChoices);
+    return start + choice * 2;
+  },
+
+  /**
+   * (本次新增) 生成一个 [min, max] 范围内的随机奇数。
+   * @param min 最小值
+   * @param max 最大值
+   * @returns {number} 一个随机奇数
+   * @example
+   * G.odd(1, 100)
+   * // => 87
+   */
+  odd(min: number, max: number): number {
+    const start = min % 2 !== 0 ? min : min + 1;
+    const end = max % 2 !== 0 ? max : max - 1;
+    if (start > end) {
+      throw new Error(`No odd numbers exist in the range [${min}, ${max}].`);
+    }
+    const numChoices = (end - start) / 2;
+    const choice = this.int(0, numChoices);
+    return start + choice * 2;
+  },
+
   // --- 字符串 ---
 
   /**
