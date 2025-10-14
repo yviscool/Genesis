@@ -9,10 +9,10 @@ import os from 'node:os';
 import crypto from 'node:crypto';
 import { type GenesisConfig, type Case } from './types';
 import { formatData } from './formatter';
-import { 
-  findSystemCompiler, 
-  DEFAULT_COMPILER_CONFIGS, 
-  getCompilerHelpMessage 
+import {
+  findSystemCompiler,
+  DEFAULT_COMPILER_CONFIGS,
+  getCompilerHelpMessage
 } from './compiler';
 
 // --- 常量定义 ---
@@ -77,7 +77,7 @@ class GenesisMaker {
     }
     return this;
   }
-  
+
   /**
    * 启动整个测试数据生成流程。
    * 采用并行处理以提升性能，并使用优雅的UI进行反馈。
@@ -85,11 +85,10 @@ class GenesisMaker {
   public async generate(): Promise<void> {
     consola.start('Genesis starting...');
 
-    // 在所有操作开始前，执行垃圾回收**
     await this.cleanupStaleCache();
-    
+
     const executablePath = await this.compileSolutionWithCache();
-    if (!executablePath) return; // 编译失败或环境不满足，已打印引导信息
+    if (!executablePath) return;
 
     await fs.mkdir(this.config.outputDir, { recursive: true });
 
@@ -100,34 +99,34 @@ class GenesisMaker {
 
     const spinner = ora(`Generating cases (0/${totalCases})`).start();
 
-    const taskPool = this.caseQueue.map((caseItem, i) => 
-        this.generateSingleCase(caseItem, this.config.startFrom + i, executablePath)
+    const taskPool = this.caseQueue.map((caseItem, i) =>
+      this.generateSingleCase(caseItem, this.config.startFrom + i, executablePath)
     );
 
     for (let i = 0; i < totalCases; i += concurrencyLimit) {
-        const batch = taskPool.slice(i, i + concurrencyLimit);
-        const batchResults = await Promise.all(batch);
-        
-        for (const result of batchResults) {
-            results.push(result);
-            completedCases++;
-            spinner.text = `Generating cases (${completedCases}/${totalCases})`;
-        }
+      const batch = taskPool.slice(i, i + concurrencyLimit);
+      const batchResults = await Promise.all(batch);
+
+      for (const result of batchResults) {
+        results.push(result);
+        completedCases++;
+        spinner.text = `Generating cases (${completedCases}/${totalCases})`;
+      }
     }
-    
+
     spinner.succeed('All cases processed.');
 
     let successCount = 0;
     for (const result of results) {
-        if (result.success) {
-            consola.success(`Generated case ${result.name}`);
-            successCount++;
-        } else {
-            consola.error(`Failed to generate case ${result.name}`);
-            consola.error('Error details:', result.error);
-        }
+      if (result.success) {
+        consola.success(`Generated case ${result.name}`);
+        successCount++;
+      } else {
+        consola.error(`Failed to generate case ${result.name}`);
+        consola.error('Error details:', result.error);
+      }
     }
-    
+
     if (successCount === totalCases) {
       consola.success(`✨ Generation complete! All ${totalCases} cases created successfully in '${this.config.outputDir}/'.`);
     } else {
@@ -143,12 +142,12 @@ class GenesisMaker {
     try {
       const rawInput = caseItem.generator();
       const formattedInput = formatData(rawInput);
-      
+
       const inFile = path.join(this.config.outputDir, `${caseNumber}.in`);
       await fs.writeFile(inFile, formattedInput);
-      
+
       const { stdout } = await execa(executablePath, { input: formattedInput });
-      
+
       const outFile = path.join(this.config.outputDir, `${caseNumber}.out`);
       await fs.writeFile(outFile, stdout);
 
@@ -162,79 +161,132 @@ class GenesisMaker {
    * 自动按顺序查找解决方案源文件。
    */
   private async findSolutionFile(): Promise<string | null> {
-    const filesToTry = this.config.solution === DEFAULTS.solution 
+    const filesToTry = this.config.solution === DEFAULTS.solution
       ? SOLUTION_FALLBACKS
       : [this.config.solution];
-    
+
     for (const file of filesToTry) {
       try {
         await fs.access(file);
         return file;
-      } catch {}
+      } catch { }
     }
     return null;
   }
 
+  // --- 编译流程重构 ---
+
   /**
-   * 智能编译模块：自动探测编译器、处理缓存、并在需要时重新编译。
+   * (协调器) 智能编译模块：处理缓存、并在需要时重新编译。
+   * 这是重构后的主方法，它将复杂的编译逻辑委托给多个职责单一的辅助方法。
    */
   private async compileSolutionWithCache(): Promise<string | null> {
     const sourceFile = await this.findSolutionFile();
     if (!sourceFile) {
-        consola.error(`Solution file not found. Tried: ${this.config.solution || SOLUTION_FALLBACKS.join(', ')}`);
-        return null;
+      consola.error(`Solution file not found. Tried: ${this.config.solution || SOLUTION_FALLBACKS.join(', ')}`);
+      return null;
     }
-    
-    // 1. 确定编译器命令
-    let compilerCommand = this.config.compiler || await findSystemCompiler();
-    
-    // 2. 如果探测后依然没有，给出引导并退出
+
+    const compilerCommand = await this.resolveCompiler();
     if (!compilerCommand) {
       consola.error(getCompilerHelpMessage());
       return null;
     }
     consola.info(`Using compiler: ${compilerCommand}`);
-    
-    // 3. 确定最终的编译参数
-    const baseConfig = DEFAULT_COMPILER_CONFIGS[compilerCommand as keyof typeof DEFAULT_COMPILER_CONFIGS] 
-                       || DEFAULT_COMPILER_CONFIGS['g++']; // 对于 g++-12 等变体，使用 g++ 的默认配置
+
+    const profile = await this.getCompilationProfile(sourceFile, compilerCommand);
+    const cacheKey = `${sourceFile}-${compilerCommand}`;
+
+    const cachedExecutable = await this.findCachedExecutable(cacheKey, profile.hash);
+    if (cachedExecutable) {
+      consola.info(`Hash match for compilation profile. Using cached executable.`);
+      return cachedExecutable;
+    }
+
+    return this.executeCompilation(sourceFile, compilerCommand, profile, cacheKey);
+  }
+
+  /**
+   * (辅助) 确定要使用的编译器命令。
+   * 优先使用用户在 configure 中指定的编译器，否则自动探测系统中的 g++ 或 clang++。
+   * @returns {Promise<string | null>} 返回找到的编译器命令字符串，如果找不到则返回 null。
+   */
+  private async resolveCompiler(): Promise<string | null> {
+    return this.config.compiler || await findSystemCompiler();
+  }
+
+  /**
+   * (辅助) 计算当前编译配置的唯一特征信息。
+   * 这包括最终的编译器标志和基于源文件内容、编译器、编译标志的唯一哈希值。
+   * @param {string} sourceFile - C++ 解决方案的源文件路径。
+   * @param {string} compilerCommand - 将要使用的编译器命令 (e.g., 'g++')。
+   * @returns {Promise<{ hash: string, flags: string[] }>} 返回一个包含哈希和最终编译标志数组的对象。
+   */
+  private async getCompilationProfile(sourceFile: string, compilerCommand: string): Promise<{ hash: string, flags: string[] }> {
+    const baseConfig = DEFAULT_COMPILER_CONFIGS[compilerCommand as keyof typeof DEFAULT_COMPILER_CONFIGS]
+      || DEFAULT_COMPILER_CONFIGS['g++']; // 对于 g++-12 等变体，使用 g++ 的默认配置
     const finalFlags = [...baseConfig.flags, ...(this.config.compilerFlags || [])];
-    
-    // 4. 计算当前编译配置的唯一哈希
+
     await fs.mkdir(TEMP_DIR, { recursive: true });
     const sourceContent = await fs.readFile(sourceFile);
     const uniqueProfile = sourceContent.toString() + compilerCommand + finalFlags.join('');
     const currentHash = crypto.createHash('sha256').update(uniqueProfile).digest('hex');
 
-    // 5. 检查缓存
-    let cache: CacheMetadata = {};
-    try { cache = JSON.parse(await fs.readFile(CACHE_FILE, 'utf-8')); } catch {}
+    return { hash: currentHash, flags: finalFlags };
+  }
 
-    const cacheKey = `${sourceFile}-${compilerCommand}`;
-    if (cache[cacheKey] && cache[cacheKey].hash === currentHash) {
-        try {
-            await fs.access(cache[cacheKey].executablePath);
-            consola.info(`Hash match for compilation profile. Using cached executable.`);
-            return cache[cacheKey].executablePath;
-        } catch {
-            consola.warn('Cached executable not found. Forcing recompilation.');
-        }
+  /**
+   * (辅助) 检查并返回有效的、依然存在于文件系统中的缓存可执行文件路径。
+   * @param {string} cacheKey - 由源文件名和编译器组成的缓存键。
+   * @param {string} currentHash - 当前编译配置的哈希值。
+   * @returns {Promise<string | null>} 如果找到有效缓存则返回可执行文件路径，否则返回 null。
+   */
+  private async findCachedExecutable(cacheKey: string, currentHash: string): Promise<string | null> {
+    let cache: CacheMetadata = {};
+    try { cache = JSON.parse(await fs.readFile(CACHE_FILE, 'utf-8')); } catch { }
+
+    const entry = cache[cacheKey];
+    if (entry && entry.hash === currentHash) {
+      try {
+        await fs.access(entry.executablePath); // 确认文件物理上还存在
+        return entry.executablePath;
+      } catch {
+        consola.warn('Cached executable not found. Forcing recompilation.');
+      }
     }
-    
-    // 6. 缓存未命中，执行编译
+    return null;
+  }
+
+  /**
+   * (辅助) 执行编译命令，并在成功后更新缓存文件。
+   * @param {string} sourceFile - C++ 解决方案的源文件路径。
+   * @param {string} compilerCommand - 使用的编译器命令。
+   * @param {object} profile - 包含哈希和编译标志的编译配置对象。
+   * @param {string} profile.hash - 当前配置的哈希值。
+   * @param {string[]} profile.flags - 要传递给编译器的参数。
+   * @param {string} cacheKey - 用于写入缓存的键。
+   * @returns {Promise<string | null>} 编译成功返回可执行文件路径，失败则返回 null。
+   */
+  private async executeCompilation(
+    sourceFile: string,
+    compilerCommand: string,
+    profile: { hash: string, flags: string[] },
+    cacheKey: string
+  ): Promise<string | null> {
     const spinner = ora(`Compiling ${sourceFile} with ${compilerCommand}...`).start();
     const executableName = path.parse(sourceFile).name;
-    let executablePath = path.join(TEMP_DIR, `${executableName}-${currentHash.substring(0, 8)}`);
+    let executablePath = path.join(TEMP_DIR, `${executableName}-${profile.hash.substring(0, 8)}`);
     if (process.platform === 'win32') {
-        executablePath += '.exe';
+      executablePath += '.exe';
     }
 
     try {
-      await execa(compilerCommand, [sourceFile, '-o', executablePath, ...finalFlags]);
+      await execa(compilerCommand, [sourceFile, '-o', executablePath, ...profile.flags]);
       spinner.succeed(`Compiled solution: ${sourceFile}`);
 
-      // 7. 更新缓存
-      cache[cacheKey] = { hash: currentHash, executablePath };
+      let cache: CacheMetadata = {};
+      try { cache = JSON.parse(await fs.readFile(CACHE_FILE, 'utf-8')); } catch { }
+      cache[cacheKey] = { hash: profile.hash, executablePath };
       await fs.writeFile(CACHE_FILE, JSON.stringify(cache, null, 2));
 
       return executablePath;
@@ -246,67 +298,52 @@ class GenesisMaker {
   }
 
   /**
-   * **新增：** 自动清理 .genesis 目录中过时的可执行文件。
+   * 自动清理 .genesis 目录中过时的（未被缓存记录引用的）可执行文件。
    */
   private async cleanupStaleCache(): Promise<void> {
     try {
-      // 1. 读取当前的缓存记录
       const cache: CacheMetadata = JSON.parse(await fs.readFile(CACHE_FILE, 'utf-8'));
-      
-      // 2. 获取所有被缓存记录引用的、有效的可执行文件路径
       const validExecutables = new Set(Object.values(cache).map(entry => entry.executablePath));
-      
-      // 3. 读取 .genesis 目录下的所有文件
       const allFilesInCacheDir = await fs.readdir(TEMP_DIR);
 
-      // 4. 遍历并删除未被引用的文件
       for (const fileName of allFilesInCacheDir) {
-        // 不要删除我们自己的缓存数据库
         if (fileName === 'cache.json') continue;
-        
+
         const fullPath = path.join(TEMP_DIR, fileName);
         if (!validExecutables.has(fullPath)) {
-          // 这个文件是孤儿，删除它
           await fs.unlink(fullPath);
           consola.debug(`Cleaned up stale cache file: ${fileName}`);
         }
       }
     } catch (error) {
-      // 如果 cache.json 不存在，或者读取目录失败，这不是致命错误。
-      // 静默地忽略，保证核心功能不受影响。
       consola.debug('Cache cleanup skipped (e.g., no cache file yet).', error);
     }
   }
 }
 
-// 1. 直接导出 GenesisMaker 类本身
-export { GenesisMaker };
+// --- 统一入口 ---
 
-// 2. (可选) 提供一个清晰的工厂函数，作为语法糖
-export function createMaker(): GenesisMaker {
-    return new GenesisMaker();
-}
-
-// 3. (推荐) 使用 Proxy 提供一个更灵活的统一入口
 const handler: ProxyHandler<any> = {
   /**
-   * 当访问 maker.case 或 maker.configure 等属性时，这个 get 陷阱会被触发
+   * 每次访问 Maker 的一个方法 (如 Maker.case) 时，此 get 陷阱被触发。
+   * 这个实现是“隐式工厂”的关键：它创建一个全新的 GenesisMaker 实例，
+   * 然后返回该实例上对应的方法。
+   *
+   * 因为方法本身（例如 configure）返回的是 `this` (即那个新创建的实例)，
+   * 所以后续的链式调用 (如 .case().generate()) 会在该实例上继续，
+   * 而不会再次触发 Proxy 的 get 陷阱。
+   *
    */
   get(target, prop, receiver) {
-    // 每次访问，我们都创建一个全新的 GenesisMaker 实例
     const instance = new GenesisMaker();
-
-    // 我们检查用户想要的属性 (比如 'case') 是否是这个新实例上的一个函数
     const method = (instance as any)[prop];
+
     if (typeof method === 'function') {
-      // 如果是，我们就返回这个函数，并确保它的 this 指向我们刚创建的实例
       return method.bind(instance);
     }
-
-    // 如果访问的不是一个方法，就按默认行为处理
+    // 允许访问非函数属性，虽然在本设计中不太可能发生
     return Reflect.get(target, prop, receiver);
   },
 };
 
-// --- 统一入口 ---
 export const Maker = new Proxy({}, handler) as GenesisMaker;
