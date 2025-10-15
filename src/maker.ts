@@ -85,6 +85,13 @@ class GenesisMaker {
   public async generate(): Promise<void> {
     consola.start('Genesis starting...');
 
+    // 在所有操作开始前清理整个输出目录
+    const cleanupOk = await this.cleanupOutputDirectory();
+    if (!cleanupOk) {
+      consola.warn('Generation process stopped due to cleanup safety checks.');
+      return;
+    }
+
     await this.cleanupStaleCache();
 
     const executablePath = await this.compileSolutionWithCache();
@@ -294,6 +301,49 @@ class GenesisMaker {
       spinner.fail(`Failed to compile ${sourceFile}`);
       consola.error('Compiler error:', error.stderr);
       return null;
+    }
+  }
+
+  /**
+   * 清理整个输出目录，并增加安全检查。
+   * @returns {Promise<boolean>} 如果清理成功或无需清理则返回 true，如果因安全检查失败则返回 false。
+   */
+  private async cleanupOutputDirectory(): Promise<boolean> {
+    const dir = this.config.outputDir;
+
+    // --- 安全检查 ---
+    const FORBIDDEN_NAMES = ['src', 'node_modules', '.git', '.', '..', '/'];
+    // 检查目录名称本身是否危险
+    if (FORBIDDEN_NAMES.includes(path.basename(dir))) {
+        consola.error(`Safety check failed: Deleting '${dir}' is forbidden. Please choose a different output directory.`);
+        return false;
+    }
+
+    const absoluteOutputDir = path.resolve(dir);
+    const projectRoot = process.cwd();
+
+    // 检查是否企图删除项目根目录
+    if (absoluteOutputDir === projectRoot) {
+        consola.error(`Safety check failed: outputDir ('${dir}') resolves to the project root. Aborting.`);
+        return false;
+    }
+
+    // 检查目录是否在项目文件夹之外
+    if (!absoluteOutputDir.startsWith(projectRoot)) {
+        consola.error(`Safety check failed: outputDir ('${dir}') is outside the project directory. Aborting.`);
+        return false;
+    }
+
+    // --- 执行删除 ---
+    consola.info(`Attempting to clean output directory: '${dir}'`);
+    try {
+        // force: true 表示如果目录不存在也不抛出错误
+        await fs.rm(dir, { recursive: true, force: true });
+        consola.success(`Cleaned output directory: '${dir}'`);
+        return true;
+    } catch (error: any) {
+        consola.error(`Failed to remove directory '${dir}':`, error);
+        return false;
     }
   }
 
