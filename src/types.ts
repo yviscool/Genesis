@@ -50,3 +50,28 @@ export interface Case {
    */
   label?: string;
 }
+
+export interface DebugOptions {
+  /** * 数组元素之间的分隔符. 
+   * @default ' ' 
+   */
+  separator?: string;
+  /** * 是否在数组/矩阵前打印其维度 (e.g., "5", "10 5").
+   * @default false 
+   */
+  printDims?: boolean;
+  /** * 是否打印推断出的数据类型.
+   * @default true 
+   */
+  printType?: boolean;
+  /**
+   * 对于数字数组/矩阵, 是否打印统计信息 (min, max, sum).
+   * @default false
+   */
+  printStats?: boolean;
+  /**
+   * 对于大型数组, 最多显示的行数/元素数. 超出部分会显示 '...'.
+   * @default 50
+   */
+  truncate?: number;
+}
