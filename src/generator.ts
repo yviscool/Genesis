@@ -1,5 +1,5 @@
 // src/generator.ts
-import { DebugOptions } from './types'; // 引入类型
+import type { DebugOptions } from './types'
 import pc from 'picocolors';
 import { shuffle as esShuffle, sampleSize as esSampleSize, chunk as esChunk } from 'es-toolkit';
 

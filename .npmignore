@@ -1,0 +1,15 @@
+# Folders
+src/
+examples/
+test/
+.genesis/
+.git/
+node_modules/
+
+# Files
+.gitignore
+build.ts
+bun.lockb
+tsconfig.json
+tsconfig.dts.json
+GEMINI.md

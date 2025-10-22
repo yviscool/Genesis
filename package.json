@@ -1,9 +1,28 @@
 {
   "name": "genesis-kit",
-  "module": "src/index.ts",
+  "module": "./dist/index.mjs",
   "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    "./package.json": "./package.json",
+    ".": {
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.js",
+      "bun": "./dist/bun/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "scripts": {
+    "test": "bun test",
+    "dev": "bun --watch run examples/make.ts",
+    "build": "bun run build.ts",
+    "release": "bun run build && bun run test && bun publish"
+  },
   "devDependencies": {
-    "@types/bun": "latest"
+    "@types/bun": "latest",
+    "tsup": "latest",
+    "esbuild-fix-imports-plugin": "latest"
   },
   "peerDependencies": {
     "typescript": "^5"
@@ -16,3 +35,4 @@
     "picocolors": "^1.1.1"
   }
 }
+
