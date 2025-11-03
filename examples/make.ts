@@ -4,7 +4,7 @@ import { Maker, G } from '../src/index';
 
 await Maker
   .configure({
-    solution: 'examples/std.cpp', 
+    solution: 'std.cpp', 
     // 我们把起始编号设为 101，来测试这个配置是否生效
     // startFrom: 101, 
   })

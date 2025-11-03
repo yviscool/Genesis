@@ -6,14 +6,9 @@ import { execa } from 'execa';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
-import crypto from 'node:crypto';
 import { type GenesisConfig, type Case } from './types';
 import { formatData } from './formatter';
-import {
-  findSystemCompiler,
-  DEFAULT_COMPILER_CONFIGS,
-  getCompilerHelpMessage
-} from './compiler';
+import { getExecutable } from './compilation';
 
 // =============================================================================
 // --- 常量与默认配置 (Constants & Defaults) ---
@@ -26,20 +21,6 @@ const DEFAULTS: Required<Omit<GenesisConfig, 'compiler' | 'compilerFlags'>> = {
 };
 
 const SOLUTION_FALLBACKS = ['std.cpp', 'main.cpp', 'solution.cpp'];
-const TEMP_DIR = '.genesis';
-const CACHE_FILE = path.join(TEMP_DIR, 'cache.json');
-
-// =============================================================================
-// --- 类型定义 (Type Definitions) ---
-// =============================================================================
-
-/** 缓存元数据结构，用于存储编译产物的信息 */
-interface CacheMetadata {
-  [cacheKey: string]: {
-    hash: string;
-    executablePath: string;
-  };
-}
 
 // =============================================================================
 // --- 核心实现类 (Core Implementation Class) ---
@@ -110,7 +91,13 @@ class GenesisMaker {
       return;
     }
 
-    const executablePath = await this.compileSolutionWithCache();
+    const sourceFile = await this.findSolutionFile();
+    if (!sourceFile) {
+      consola.error(`Solution file not found. Tried: ${this.config.solution || SOLUTION_FALLBACKS.join(', ')}`);
+      return;
+    }
+
+    const executablePath = await getExecutable(sourceFile, this.config);
     if (!executablePath) return;
 
     await this.runGenerationTasks(executablePath);
@@ -121,18 +108,13 @@ class GenesisMaker {
   // ---------------------------------------------------------------------------
 
   /**
-   * 准备生成环境，包括清理输出目录和过时缓存。
+   * 准备生成环境，包括清理输出目录。
    * @returns {Promise<boolean>} 如果环境准备就绪则返回 true，否则返回 false。
    */
   private async prepareEnvironment(): Promise<boolean> {
-    // 清理整个输出目录，这是一个关键步骤，因此我们首先执行
     const cleanupOk = await this.cleanupOutputDirectory();
     if (!cleanupOk) return false;
-
-    // 清理缓存目录中未被引用的旧编译产物
-    await this.cleanupStaleCache();
     
-    // 确保输出目录存在
     await fs.mkdir(this.config.outputDir, { recursive: true });
 
     return true;
@@ -149,18 +131,15 @@ class GenesisMaker {
       return;
     }
 
-    // 使用系统 CPU 核心数作为并行上限，避免资源过度消耗
     const concurrencyLimit = os.cpus().length;
     let completedCases = 0;
     const results: { name: string; success: boolean; error?: string }[] = [];
     const spinner = ora(`Generating cases (0/${totalCases})`).start();
 
-    // 创建一个任务池，每个任务都是一个返回 Promise 的函数
     const taskPool = this.caseQueue.map((caseItem, i) =>
       () => this.generateSingleCase(caseItem, this.config.startFrom + i, executablePath)
     );
 
-    // 分批并行执行任务
     for (let i = 0; i < totalCases; i += concurrencyLimit) {
       const batchPromises = taskPool.slice(i, i + concurrencyLimit).map(task => task());
       const batchResults = await Promise.all(batchPromises);
@@ -202,143 +181,6 @@ class GenesisMaker {
   }
 
   // ---------------------------------------------------------------------------
-  // --- 编译子系统 (Compilation Subsystem) ---
-  // ---------------------------------------------------------------------------
-
-  /**
-   * (协调器) 智能编译模块：处理缓存、并在需要时重新编译。
-   * 这是编译逻辑的主入口，它将复杂流程委托给多个职责单一的辅助方法。
-   * @returns {Promise<string | null>} 编译成功返回可执行文件路径，失败则返回 null。
-   */
-  private async compileSolutionWithCache(): Promise<string | null> {
-    const sourceFile = await this.findSolutionFile();
-    if (!sourceFile) {
-      consola.error(`Solution file not found. Tried: ${this.config.solution || SOLUTION_FALLBACKS.join(', ')}`);
-      return null;
-    }
-
-    const compilerCommand = await this.resolveCompiler();
-    if (!compilerCommand) {
-      consola.error(getCompilerHelpMessage());
-      return null;
-    }
-    consola.info(`Using compiler: ${compilerCommand}`);
-
-    const profile = await this.getCompilationProfile(sourceFile, compilerCommand);
-    const cacheKey = `${sourceFile}-${compilerCommand}`;
-
-    const cachedExecutable = await this.findCachedExecutable(cacheKey, profile.hash);
-    if (cachedExecutable) {
-      consola.info(`Hash match. Using cached executable.`);
-      return cachedExecutable;
-    }
-
-    return this.executeCompilation(sourceFile, compilerCommand, profile, cacheKey);
-  }
-
-  /**
-   * (辅助) 确定要使用的编译器命令。
-   * @returns {Promise<string | null>} 返回找到的编译器命令，否则返回 null。
-   */
-  private async resolveCompiler(): Promise<string | null> {
-    return this.config.compiler || await findSystemCompiler();
-  }
-
-  /**
-   * (辅助) 计算当前编译配置的唯一特征信息（哈希和编译标志）。
-   * @param sourceFile - 解决方案的源文件路径。
-   * @param compilerCommand - 使用的编译器命令。
-   * @returns {Promise<{ hash: string, flags: string[] }>} 包含哈希和最终编译标志的对象。
-   */
-  private async getCompilationProfile(sourceFile: string, compilerCommand: string): Promise<{ hash: string, flags: string[] }> {
-    const baseConfig = DEFAULT_COMPILER_CONFIGS[compilerCommand as keyof typeof DEFAULT_COMPILER_CONFIGS]
-      || DEFAULT_COMPILER_CONFIGS['g++'];
-    const finalFlags = [...baseConfig.flags, ...(this.config.compilerFlags || [])];
-
-    await fs.mkdir(TEMP_DIR, { recursive: true });
-    const sourceContent = await fs.readFile(sourceFile);
-    const uniqueProfile = sourceContent.toString() + compilerCommand + finalFlags.join('');
-    const currentHash = crypto.createHash('sha256').update(uniqueProfile).digest('hex');
-
-    return { hash: currentHash, flags: finalFlags };
-  }
-
-  /**
-   * (辅助) 检查并返回有效的、依然存在于文件系统中的缓存可执行文件路径。
-   * @param cacheKey - 由源文件名和编译器组成的缓存键。
-   * @param currentHash - 当前编译配置的哈希值。
-   * @returns {Promise<string | null>} 如果找到有效缓存则返回可执行文件路径，否则返回 null。
-   */
-  private async findCachedExecutable(cacheKey: string, currentHash: string): Promise<string | null> {
-    let cache: CacheMetadata = {};
-    try {
-      cache = JSON.parse(await fs.readFile(CACHE_FILE, 'utf-8'));
-    } catch {
-      return null; // 缓存文件不存在或无法解析
-    }
-
-    const entry = cache[cacheKey];
-    if (entry && entry.hash === currentHash) {
-      try {
-        await fs.access(entry.executablePath); // 确认文件物理上还存在
-        return entry.executablePath;
-      } catch {
-        consola.warn('Cached executable record found, but the file is missing. Forcing recompilation.');
-      }
-    }
-    return null;
-  }
-
-  /**
-   * (辅助) 执行编译命令，并在成功后更新缓存文件。
-   * @param sourceFile - C++ 解决方案的源文件路径。
-   * @param compilerCommand - 使用的编译器命令。
-   * @param profile - 包含哈希和编译标志的编译配置对象。
-   * @param cacheKey - 用于写入缓存的键。
-   * @returns {Promise<string | null>} 编译成功返回可执行文件路径，失败则返回 null。
-   */
-  private async executeCompilation(
-    sourceFile: string,
-    compilerCommand: string,
-    profile: { hash: string, flags: string[] },
-    cacheKey: string
-  ): Promise<string | null> {
-    const spinner = ora(`Compiling ${sourceFile} with ${compilerCommand}...`).start();
-    const executableName = path.parse(sourceFile).name;
-    const executableSuffix = process.platform === 'win32' ? '.exe' : '';
-    const executablePath = path.join(TEMP_DIR, `${executableName}-${profile.hash.substring(0, 8)}${executableSuffix}`);
-
-    try {
-      await execa(compilerCommand, [sourceFile, '-o', executablePath, ...profile.flags]);
-      spinner.succeed(`Compiled solution: ${sourceFile}`);
-
-      await this.updateCache(cacheKey, profile.hash, executablePath);
-      return executablePath;
-    } catch (error: any) {
-      spinner.fail(`Failed to compile ${sourceFile}`);
-      consola.error('Compiler error:', error.stderr || error.message);
-      return null;
-    }
-  }
-  
-  /**
-   * (辅助) 更新缓存文件。这是一个原子操作，以提高代码清晰度。
-   * @param cacheKey
-   * @param hash
-   * @param executablePath
-   */
-  private async updateCache(cacheKey: string, hash: string, executablePath: string): Promise<void> {
-    let cache: CacheMetadata = {};
-    try {
-      cache = JSON.parse(await fs.readFile(CACHE_FILE, 'utf-8'));
-    } catch {} // 忽略读取错误，我们将创建一个新的
-    
-    cache[cacheKey] = { hash, executablePath };
-    await fs.writeFile(CACHE_FILE, JSON.stringify(cache, null, 2));
-  }
-
-
-  // ---------------------------------------------------------------------------
   // --- 文件系统与辅助工具 (Filesystem & Utilities) ---
   // ---------------------------------------------------------------------------
 
@@ -358,7 +200,6 @@ class GenesisMaker {
       const inFile = path.join(this.config.outputDir, `${caseNumber}.in`);
       await fs.writeFile(inFile, formattedInput);
 
-      // 使用输入字符串执行，比重读文件性能更好
       const { stdout } = await execa(executablePath, { input: formattedInput });
 
       const outFile = path.join(this.config.outputDir, `${caseNumber}.out`);
@@ -366,7 +207,6 @@ class GenesisMaker {
 
       return { name: caseName, success: true };
     } catch (error: any) {
-      // 提供更具体的错误信息
       const errorMessage = error.stderr || error.message || 'An unknown error occurred.';
       return { name: caseName, success: false, error: errorMessage };
     }
@@ -397,7 +237,6 @@ class GenesisMaker {
   private async cleanupOutputDirectory(): Promise<boolean> {
     const dir = this.config.outputDir;
 
-    // --- 安全检查 ---
     const FORBIDDEN_NAMES = ['src', 'node_modules', '.git', '.', '..', '/'];
     if (FORBIDDEN_NAMES.includes(path.basename(dir))) {
       consola.error(`Safety check failed: Deleting '${dir}' is forbidden. Please choose a different output directory.`);
@@ -417,7 +256,6 @@ class GenesisMaker {
       return false;
     }
 
-    // --- 执行删除 ---
     consola.info(`Cleaning output directory: '${dir}'`);
     try {
       await fs.rm(dir, { recursive: true, force: true });
@@ -426,34 +264,6 @@ class GenesisMaker {
     } catch (error: any) {
       consola.error(`Failed to remove directory '${dir}':`, error);
       return false;
-    }
-  }
-
-  /**
-   * 自动清理 .genesis 目录中过时的（未被缓存记录引用的）可执行文件。
-   */
-  private async cleanupStaleCache(): Promise<void> {
-    try {
-      const cache: CacheMetadata = JSON.parse(await fs.readFile(CACHE_FILE, 'utf-8'));
-      const validExecutables = new Set(Object.values(cache).map(entry => entry.executablePath));
-      const allFilesInCacheDir = await fs.readdir(TEMP_DIR);
-
-      const cleanupPromises = allFilesInCacheDir
-        .filter(fileName => fileName !== 'cache.json')
-        .map(fileName => {
-          const fullPath = path.join(TEMP_DIR, fileName);
-          if (!validExecutables.has(fullPath)) {
-            consola.debug(`Cleaning up stale cache file: ${fileName}`);
-            return fs.unlink(fullPath);
-          }
-          return Promise.resolve();
-        });
-      
-      await Promise.all(cleanupPromises);
-    } catch (error: any) {
-      if (error.code !== 'ENOENT') { // 如果不是 "文件不存在" 错误，则提示
-        consola.debug('Cache cleanup skipped due to an error:', error.message);
-      }
     }
   }
 }
@@ -483,7 +293,6 @@ const handler: ProxyHandler<any> = {
     if (typeof method === 'function') {
       return method.bind(instance);
     }
-    // 对于非函数属性的罕见情况，也进行处理
     return Reflect.get(instance, prop);
   },
 };

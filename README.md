@@ -1,20 +1,23 @@
 # Genesis: 为算法竞赛而生的测试数据生成器
 
-[](https://www.google.com/search?q=https://www.npmjs.com/package/genesis-kit)
-[](https://www.google.com/search?q=https://github.com/yviscool/genesis/blob/main/LICENSE)
+[](https://www.google.com/search?q=%5Bhttps://www.google.com/search%3Fq%3Dhttps://www.npmjs.com/package/genesis-kit%5D\(https://www.google.com/search%3Fq%3Dhttps://www.npmjs.com/package/genesis-kit\))
+[](https://www.google.com/search?q=%5Bhttps://www.google.com/search%3Fq%3Dhttps://github.com/yviscool/genesis/blob/main/LICENSE%5D\(https://www.google.com/search%3Fq%3Dhttps://github.com/yviscool/genesis/blob/main/LICENSE\))
 
-**Genesis** 是一个为算法竞赛出题人、选手和教练量身打造的、极其简单易用的测试数据生成工具。它将繁琐的编译、数据生成、文件 I/O 流程自动化，让你能专注于**数据本身的设计**，而非过程的实现。
+**Genesis** 是一个为算法竞赛出题人、选手和教练量身打造的、极其简单易用的测试数据生成工具。它将繁琐的编译、数据生成、文件 I/O、对拍验证等流程自动化，让你能专注于**数据本身的设计**，而非过程的实现。
 
 ## ✨ 核心特性
 
-  * **声明式 API**: 使用链式调用 `.case()` 直观地定义每个测试点，代码结构与数据逻辑高度一致。
+  * **声明式 API**: 使用链式调用 `.case()` 和 `.run()` 直观地定义数据和对拍，代码结构与逻辑高度一致。
+  * **内置对拍器 (`Checker`)**: 自动运行标程和待测程序，高保真地对比输出 (Diff)，快速定位 `WA`/`TLE`。
   * **强大的数据生成器 (`G`)**: 内置丰富、便捷的生成函数 (`G.int`, `G.permutation`, `G.matrix`, `G.even` 等)，满足 99% 的基础数据需求。
   * **智能格式化**: 你只需返回结构化的数据（如 `[[n, m], grid]`），Genesis 会自动处理空格和换行，生成符合要求的 `.in` 文件。**无论 `grid` 是数字矩阵还是字符串数组，它都能正确处理！**
-  * **自动编译与缓存**: 自动探测 C++ 编译器（`g++` / `clang++`），并对标程进行编译。基于文件内容和编译参数的智能缓存机制，源码不变则无需重复编译，极大提升效率。
-  * **高性能**: 利用 Node.js 的异步特性和多核心 CPU，并行生成所有测试用例，速度飞快。
+  * **自动编译与缓存**: 自动探测 C++ 编译器（`g++` / `clang++`），并对标程和解法进行编译。基于文件内容和编译参数的智能缓存机制，源码不变则无需重复编译，极大提升效率。
+  * **高性能**: 利用 Node.js 的异步特性和多核心 CPU，`Maker` 可并行生成所有测试用例，`Checker` 可高速执行对拍。
   * **跨平台**: 在 Windows (MSYS2/MinGW)、macOS 和 Linux 上均可无缝工作。
 
-## 🚀 快速上手
+## 🚀 快速上手 (Maker 篇)
+
+`Maker` 用于批量生成 `.in` / `.out` 文件。
 
 ### 1\. 安装
 
@@ -80,23 +83,86 @@ bun make.ts
 tsx make.ts
 ```
 
-**发生了什么？**
-
-Genesis 会：
-
-1.  找到并编译你的 `std.cpp` 文件。
-2.  并行执行 7 个 `case` 的生成逻辑。
-3.  将每个 `case` 的返回值（例如 `[[10, 20]]`）智能格式化为字符串（`"10 20"`）。
-4.  将格式化后的字符串作为输入，运行编译好的标程。
-5.  将输入和输出分别保存到 `data/` 目录下的 `1.in`, `1.out`, `2.in`, `2.out`, ...
-
-你会在项目根目录看到一个 `data` 文件夹，包含了所有生成的测试数据，可以直接用于评测！
+**发生了什么？** Genesis 会自动找到并编译 `std.cpp`，然后并行执行 7 个 `case`，最后将输入 (`.in`) 和输出 (`.out`) 保存到 `data/` 目录中。
 
 ## 📚 API 参考
 
-### `Maker` API
+Genesis 提供了两大核心工具：`Maker` (用于批量生成数据) 和 `Checker` (用于对拍验证)。
 
-`Maker` 是 `Genesis` 的主入口，采用链式调用设计。整个流程的核心是定义一系列的测试用例（Test Cases），然后启动生成。
+-----
+
+### `Checker` (对拍器) API
+
+`Checker` 是一个自动化的“对拍”工具。它使用同一个数据生成器，分别运行“标准答案”(std) 和“待测解法”(target)，并高保真地对比它们的输出，直到找到第一个错误 (WA / TLE / RE) 为止。
+
+#### 快速上手：`check.ts`
+
+让我们用 `Checker` 来捕捉一个常见的 `int` 溢出错误。
+
+**准备文件：**
+
+1.  `std.cpp` (A+B, 使用 `long long`，**正确**)
+2.  `my_buggy.cpp` (A+B, 使用 `int`，**有 bug**)
+
+**编写 `check.ts`:**
+
+```typescript
+// check.ts
+import { Checker, G } from 'genesis-kit';
+
+Checker
+  // 1. 配置
+  .configure({
+    std: 'std.cpp',          // (必需) 标程，必须正确
+    target: 'my_buggy.cpp',  // (必需) 你要测试的程序
+    
+    // (可选) 对比模式
+    // 'normalized' (默认): 模拟 OJ 裁决 (忽略行尾空格、忽略空行)
+    // 'exact': 严格字节对比
+    compareMode: 'normalized'
+  })
+
+  // 2. 定义数据生成器
+  .gen(() => {
+    // 90% 的几率生成 int 安全范围内的数
+    if (Math.random() < 0.9) {
+      return [[G.int(1e9), G.int(1e9)]];
+    }
+    // 10% 的几率生成 HACK 数据 (会导致 int 溢出)
+    return [[G.int(1.5e9, 2e9), G.int(1.5e9, 2e9)]];
+  })
+
+  // 3. (可选) 设置超时
+  .timeout(1000) // 仅对 target 生效，单位毫秒
+
+  // 4. 运行
+  .run(10000); // 运行 10000 次，或在第一次出错时停止
+```
+
+#### `.run()` 流程
+
+当 `.run(N)` 启动时, `Checker` 会：
+
+1.  **编译**：自动编译 `std` 和 `target` (并复用 `Maker` 的缓存)。
+2.  **循环**：开始一个**串行**循环，最多 `N` 次。
+3.  **生成**：在**每次**循环中，调用 `.gen()` 里的函数生成一组新数据。
+4.  **执行**：将生成的数据作为 `stdin`，分别运行 `std` 和 `target` 程序。
+5.  **裁决**：
+      * **TLE / RE**：如果 `target` 超时或崩溃 (RE)，立即停止。
+      * **WA (Wrong Answer)**：调用高保真对比器 (Diff) 比较 `std` 和 `target` 的 `stdout`。
+6.  **报告**：
+      * **PASSED**：在控制台更新计数，继续下一次循环。
+      * **FAILED (WA/TLE/RE)**：**立即停止**，并在控制台打印详细的失败报告（包括输入、标程输出、你的输出）。
+      * **保存现场**：自动将导致失败的数据保存到：
+          * `_checker_fail.in`
+          * `_checker_std.out`
+          * `_checker_my.out`
+
+-----
+
+### `Maker` (数据生成器) API
+
+`Maker` 是 `Genesis` 的批量数据生成工具。整个流程的核心是定义一系列的测试用例（Test Cases），然后启动生成。
 
 #### **定义测试点: `.case()` 与 `.cases()`**
 
@@ -161,7 +227,9 @@ Maker.configure({
 
 ##### **`.generate(): Promise<void>`**
 
-**必须在链式调用的末尾调用**。它会启动整个自动化流程：编译、生成、运行标程、保存文件。
+**必须在 `Maker` 链式调用的末尾调用**。它会启动整个自动化流程：编译、生成、运行标程、保存文件。
+
+-----
 
 ### `G` (Generator) API
 
@@ -204,7 +272,7 @@ Maker.configure({
 
 ## 🧠 智能格式化：所见即所得
 
-我们坚信，出题人应该专注于**数据逻辑**，而不是**输出格式**。因此，Genesis 的 `case` 函数返回值 API 被设计得极其直观，遵循“所见即所得”的哲学。
+我们坚信，出题人应该专注于**数据逻辑**，而不是**输出格式**。因此，`Maker` 和 `Checker` 的 `generator` 函数返回值 API 被设计得极其直观，遵循“所见即所得”的哲学。
 
 **你只需要返回一个数组，其结构就是你想要的 `.in` 文件的“蓝图”**。
 

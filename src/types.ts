@@ -75,3 +75,44 @@ export interface DebugOptions {
    */
   truncate?: number;
 }
+
+/**
+ * 对拍模式
+ * - `normalized`: 忽略行尾空格、忽略空行 (模拟 `diff -bB`)
+ * - `exact`: 进行严格的文本全等比较
+ */
+export type CompareMode = 'normalized' | 'exact';
+
+/**
+ * Checker 的核心配置对象。
+ */
+export interface CheckerConfig {
+  /**
+   * 标准程序（正确程序）的源文件路径。
+   */
+  std: string;
+
+  /**
+   * 待测试程序的源文件路径。
+   */
+  target: string;
+
+  /**
+   * 指定要使用的 C++ 编译器命令。
+   * 如果不指定，Genesis 会自动探测 'g++' 或 'clang++'。
+   * @example 'g++-12'
+   */
+  compiler?: GenesisConfig['compiler'];
+
+  /**
+   * 传递给 C++ 编译器的额外标志。
+   * @default ['-O2', '-std=c++17']
+   */
+  compilerFlags?: GenesisConfig['compilerFlags'];
+
+  /**
+   * 对比模式。
+   * @default 'normalized'
+   */
+  compareMode?: CompareMode;
+}
