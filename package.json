@@ -1,5 +1,28 @@
 {
   "name": "genesis-kit",
+  "version": "1.0.0",
+  "description": "为算法竞赛(OI/ACM)设计的, 简单易用的测试数据生成器与对拍器。",
+  "keywords": [
+    "oi",
+    "acm",
+    "icpc",
+    "algorithm",
+    "contest",
+    "test-data",
+    "generator",
+    "checker",
+    "对拍",
+    "genesis-kit"
+  ],
+  "author": "YV",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/yviscool/Genesis/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/yviscool/Genesis"
+  },
   "module": "./dist/index.mjs",
   "type": "module",
   "main": "dist/index.js",

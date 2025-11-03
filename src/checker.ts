@@ -119,6 +119,7 @@ export class GenesisChecker {
         stdOutput = stdout;
       } catch (error) {
         spinner.fail(t('checker.stdCrashed', i));
+        // @ts-expect-error
         await this.reportFailure(i, 'RE_STD', formattedInput, (error as ExecaError).stderr || '', '');
         return;
       }
@@ -144,6 +145,7 @@ export class GenesisChecker {
           await this.reportFailure(i, 'TLE', formattedInput, stdOutput, '[Time Limit Exceeded]');
         } else {
           spinner.fail(t('checker.runtimeError', i));
+          // @ts-expect-error
           await this.reportFailure(i, 'RE', formattedInput, stdOutput, execaError.stderr || '[No stderr]');
         }
         return;
@@ -203,6 +205,7 @@ export class GenesisChecker {
         consola.info(t('checker.diffHint', FAIL_ARTIFACTS.std, FAIL_ARTIFACTS.my));
       }
     } catch (error) {
+      // @ts-expect-error
       consola.error(t('checker.saveArtifactsFailed', error));
     }
     consola.error(`------------------------------------`);
