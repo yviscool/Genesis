@@ -3,13 +3,13 @@
 import { type CompareMode } from './types';
 
 /**
- * 规范化输出字符串以进行比较。
- * - 替换 CRLF 为 LF
- * - 按行分割
- * - 移除所有空行
- * - 裁剪每行末尾的空白
- * @param text - 原始输出文本
- * @returns {string[]} - 处理后的行数组
+ * Normalizes an output string for comparison.
+ * - Replaces CRLF with LF
+ * - Splits into lines
+ * - Removes all blank lines
+ * - Trims trailing whitespace from each line
+ * @param text - The raw output text.
+ * @returns {string[]} - An array of processed lines.
  */
 function normalizeOutput(text: string): string[] {
   if (!text) {
@@ -23,11 +23,11 @@ function normalizeOutput(text: string): string[] {
 }
 
 /**
- * 对比两个输出字符串。
- * @param stdOut - 标准输出
- * @param myOut - 你的输出
- * @param mode - 对比模式 ('exact' 或 'normalized')
- * @returns {boolean} - 如果输出匹配则返回 true
+ * Compares two output strings.
+ * @param stdOut - The standard output.
+ * @param myOut - Your output.
+ * @param mode - The comparison mode ('exact' or 'normalized').
+ * @returns {boolean} - True if the outputs match.
  */
 export function compareOutputs(stdOut: string, myOut: string, mode: CompareMode): boolean {
   if (mode === 'exact') {

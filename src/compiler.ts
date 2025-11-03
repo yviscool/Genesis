@@ -1,10 +1,11 @@
 // src/compiler.ts
 import { execaCommand } from 'execa';
-import { green } from 'picocolors'; // 使用颜色库让命令更醒目
+import { green } from 'picocolors';
+import { t } from './i18n';
 
 /**
- * 为支持的编译器预设优化的编译参数。
- * 我们为 clang++ 添加了 -Wno-unused-result，这是一个常见的、在竞赛代码中可以忽略的警告。
+ * Pre-configured optimized compilation flags for supported compilers.
+ * We add -Wno-unused-result for clang++ to suppress a common warning in competitive programming code.
  */
 export const DEFAULT_COMPILER_CONFIGS = {
   'g++': {
@@ -15,53 +16,47 @@ export const DEFAULT_COMPILER_CONFIGS = {
   },
 };
 
-// 探测顺序
+// Order of compilers to check for
 const COMPILERS_TO_CHECK = ['g++', 'clang++'] as const;
 
 /**
- * 探测系统中可用的 C++ 编译器。
- * @returns 返回找到的编译器命令，如 'g++' 或 'clang++'，如果都找不到则返回 null。
+ * Detects available C++ compilers on the system.
+ * @returns The command for a found compiler (e.g., 'g++' or 'clang++'), or null if none are found.
  */
 export async function findSystemCompiler(): Promise<'g++' | 'clang++' | null> {
   for (const cmd of COMPILERS_TO_CHECK) {
     try {
-      // 通过执行 --version 来检查命令是否存在且可用
-      // stdio: 'ignore' 会抑制所有输出，我们只关心它是否成功
+      // Check if the command exists and is executable by running --version
+      // stdio: 'ignore' suppresses all output; we only care about success
       await execaCommand(`${cmd} --version`, { stdio: 'ignore' });
-      return cmd; // 找到了，立即返回
+      return cmd; // Found, return immediately
     } catch {
-      // 命令不存在或执行失败，继续尝试下一个
+      // Command doesn't exist or failed, try the next one
     }
   }
-  return null; // 遍历完都没找到
+  return null; // None found after checking all
 }
 
 /**
- * 根据当前操作系统，生成人性化的编译器安装指南。
+ * Generates a user-friendly guide for installing a C++ compiler based on the current OS.
  */
 export function getCompilerHelpMessage(): string {
   const platform = process.platform;
-  let message = 'No C++ compiler found (g++ or clang++). Please install one and ensure it is in your system PATH.\n';
+  let message = t('compiler.notFound') + '\n';
 
   switch (platform) {
     case 'win32':
-      message += `On Windows, we recommend installing MinGW-w64 via MSYS2. Follow these steps:\n`;
-      message += `  1. Install MSYS2 from https://www.msys2.org/\n`;
-      message += `  2. Open the MSYS2 terminal and run: ${green('pacman -S --needed base-devel mingw-w64-ucrt-x86_64-toolchain')}\n`;
-      message += `  3. Add the compiler's bin directory to your system's PATH (e.g., C:\\msys64\\ucrt64\\bin).`;
+      message += t('compiler.installGuide.windows', green('pacman -S --needed base-devel mingw-w64-ucrt-x86_64-toolchain'));
       break;
     case 'darwin': // macOS
-      message += `On macOS, you can install Clang by installing the Xcode Command Line Tools. Run this command in your terminal:\n`;
-      message += `  ${green('xcode-select --install')}`;
+      message += t('compiler.installGuide.macos', green('xcode-select --install'));
       break;
     case 'linux':
-      message += `On Debian/Ubuntu-based Linux, run:\n`;
-      message += `  ${green('sudo apt update && sudo apt install build-essential')}\n`;
-      message += `On Fedora/CentOS-based Linux, run:\n`;
-      message += `  ${green('sudo dnf groupinstall "Development Tools"')}`;
+      message += t('compiler.installGuide.linux.debian', green('sudo apt update && sudo apt install build-essential'));
+      message += '\n' + t('compiler.installGuide.linux.fedora', green('sudo dnf groupinstall "Development Tools"'));
       break;
     default:
-      message += 'Please consult your operating system\'s documentation for instructions on installing a C++ compiler.';
+      message += t('compiler.installGuide.default');
   }
   return message;
 }

@@ -8,9 +8,10 @@ import { type CheckerConfig, type CompareMode } from './types';
 import { getExecutable } from './compilation';
 import { compareOutputs } from './differ';
 import { formatData } from './formatter';
+import { t } from './i18n';
 
 // =============================================================================
-// --- 常量与默认配置 (Constants & Defaults) ---
+// --- Constants & Defaults ---
 // =============================================================================
 
 const DEFAULTS: Required<Omit<CheckerConfig, 'std' | 'target' | 'compiler' | 'compilerFlags'>> = {
@@ -24,13 +25,13 @@ const FAIL_ARTIFACTS = {
 };
 
 // =============================================================================
-// --- 核心实现类 (Core Implementation Class) ---
+// --- Core Implementation Class ---
 // =============================================================================
 
 export class GenesisChecker {
   private config: CheckerConfig & { compareMode: CompareMode };
   private generator: (() => any) | null = null;
-  private timeoutMs: number = 5000; // 默认超时时间 5s
+  private timeoutMs: number = 5000; // Default timeout: 5s
 
   constructor() {
     // @ts-expect-error - The `std` and `target` are required and will be set by `configure`.
@@ -38,17 +39,17 @@ export class GenesisChecker {
   }
 
   // ---------------------------------------------------------------------------
-  // --- 公共 API (Public API) ---
+  // --- Public API ---
   // ---------------------------------------------------------------------------
 
   /**
-   * 配置对拍器实例。
-   * @param userConfig 用户提供的配置对象
-   * @returns {this} 返回实例以支持链式调用
+   * Configures the checker instance.
+   * @param userConfig The user-provided configuration object.
+   * @returns {this} The instance for chaining.
    */
   public configure(userConfig: CheckerConfig): this {
     if (!userConfig.std || !userConfig.target) {
-      consola.error('Checker configuration must include `std` and `target` properties.');
+      consola.error(t('checker.missingStdOrTarget'));
       throw new Error('Missing std or target in checker configuration.');
     }
     this.config = { ...this.config, ...userConfig };
@@ -56,9 +57,9 @@ export class GenesisChecker {
   }
 
   /**
-   * 设置用于生成测试数据的生成器函数。
-   * @param generator - 生成器函数
-   * @returns {this} 返回实例以支持链式调用
+   * Sets the generator function for producing test data.
+   * @param generator The generator function.
+   * @returns {this} The instance for chaining.
    */
   public gen(generator: () => any): this {
     this.generator = generator;
@@ -66,9 +67,9 @@ export class GenesisChecker {
   }
 
   /**
-   * 设置待测程序运行的超时时间。
-   * @param ms - 超时时间（毫秒）
-   * @returns {this} 返回实例以支持链式调用
+   * Sets the timeout for the target program's execution.
+   * @param ms Timeout in milliseconds.
+   * @returns {this} The instance for chaining.
    */
   public timeout(ms: number): this {
     if (ms > 0) {
@@ -78,36 +79,36 @@ export class GenesisChecker {
   }
 
   /**
-   * 启动对拍流程。
-   * @param count - 要运行的测试点数量
+   * Starts the checking process.
+   * @param count The number of test cases to run.
    */
   public async run(count: number = 100): Promise<void> {
-    consola.start('Genesis Checker starting...');
+    consola.start(t('checker.starting'));
 
     if (!this.generator) {
-      consola.error('No generator function provided. Use .gen() to set one.');
+      consola.error(t('checker.noGenerator'));
       return;
     }
 
     const { std, target, ...compilerConfig } = this.config;
 
-    // --- 编译 --- 
+    // --- Compilation ---
     const stdPath = await getExecutable(std, compilerConfig);
     if (!stdPath) {
-      consola.error(`Failed to compile the standard solution: ${std}`);
+      consola.error(t('checker.compileStdFailed', std));
       return;
     }
 
     const targetPath = await getExecutable(target, compilerConfig);
     if (!targetPath) {
-      consola.error(`Failed to compile the target solution: ${target}`);
+      consola.error(t('checker.compileTargetFailed', target));
       return;
     }
 
-    // --- 对拍循环 ---
-    const spinner = ora(`Running tests (0/${count})`).start();
+    // --- Checking Loop ---
+    const spinner = ora(t('checker.runningTests', 0, count)).start();
     for (let i = 1; i <= count; i++) {
-      spinner.text = `Running tests (${i}/${count})`;
+      spinner.text = t('checker.runningTests', i, count);
 
       const rawInput = this.generator();
       const formattedInput = formatData(rawInput);
@@ -117,7 +118,7 @@ export class GenesisChecker {
         const { stdout } = await execa(stdPath, { input: formattedInput });
         stdOutput = stdout;
       } catch (error) {
-        spinner.fail(`Test #${i}: Standard solution crashed!`);
+        spinner.fail(t('checker.stdCrashed', i));
         await this.reportFailure(i, 'RE_STD', formattedInput, (error as ExecaError).stderr || '', '');
         return;
       }
@@ -131,7 +132,7 @@ export class GenesisChecker {
         const passed = compareOutputs(stdOutput, myOutput, this.config.compareMode);
 
         if (!passed) {
-          spinner.fail(`Test #${i}: Wrong Answer!`);
+          spinner.fail(t('checker.wrongAnswer', i));
           await this.reportFailure(i, 'WA', formattedInput, stdOutput, myOutput);
           return;
         }
@@ -139,57 +140,57 @@ export class GenesisChecker {
       } catch (error) {
         const execaError = error as ExecaError;
         if (execaError.timedOut) {
-          spinner.fail(`Test #${i}: Time Limit Exceeded!`);
+          spinner.fail(t('checker.timeLimitExceeded', i));
           await this.reportFailure(i, 'TLE', formattedInput, stdOutput, '[Time Limit Exceeded]');
         } else {
-          spinner.fail(`Test #${i}: Runtime Error!`);
+          spinner.fail(t('checker.runtimeError', i));
           await this.reportFailure(i, 'RE', formattedInput, stdOutput, execaError.stderr || '[No stderr]');
         }
         return;
       }
     }
 
-    spinner.succeed(`✨ All ${count} tests passed!`);
+    spinner.succeed(t('checker.allPassed', count));
   }
 
   // ---------------------------------------------------------------------------
-  // --- 辅助方法 (Helper Methods) ---
+  // --- Helper Methods ---
   // ---------------------------------------------------------------------------
 
   /**
-   * 报告失败并保存现场文件。
-   * @param testNumber - 失败的测试点编号
-   * @param type - 失败类型 (WA, RE, TLE, RE_STD)
-   * @param input - 导致失败的输入
-   * @param stdOut - 标准输出
-   * @param myOut - 待测程序输出或错误信息
+   * Reports a failure and saves the artifacts.
+   * @param testNumber The number of the failed test case.
+   * @param type The type of failure (WA, RE, TLE, RE_STD).
+   * @param input The input that caused the failure.
+   * @param stdOut The standard output.
+   * @param myOut The output or error from the target program.
    */
   private async reportFailure(testNumber: number, type: string, input: string, stdOut: string, myOut: string): Promise<void> {
     let typeMessage = '';
     switch (type) {
       case 'WA':
-        typeMessage = 'Wrong Answer';
+        typeMessage = t('checker.wa');
         break;
       case 'RE':
-        typeMessage = 'Runtime Error';
+        typeMessage = t('checker.re');
         break;
       case 'TLE':
-        typeMessage = 'Time Limit Exceeded';
+        typeMessage = t('checker.tle');
         break;
       case 'RE_STD':
-        typeMessage = 'Standard Solution Runtime Error';
+        typeMessage = t('checker.re_std');
         break;
       default:
-        typeMessage = 'Unknown Error';
+        typeMessage = t('checker.unknownError');
     }
 
     const errorMessage = `\n` +
-      `[error] [FAILED at test ${testNumber}] ${type} (${typeMessage})\n` +
+      `[error] [${t('checker.failedAtTest', testNumber)}] ${type} (${typeMessage})\n` +
       `------------------------------------\n` +
-      `❌ Test #${testNumber}: ${type}\n\n` +
-      `[Input]\n${input}\n\n` +
-      `[Std Output]\n${stdOut}\n\n` +
-      `[My Output]\n${myOut}\n\n`;
+      `${t('checker.testCase', testNumber, type)}\n\n` +
+      `[${t('checker.input')}]\n${input}\n\n` +
+      `[${t('checker.stdOutput')}]\n${stdOut}\n\n` +
+      `[${t('checker.myOutput')}]\n${myOut}\n\n`;
 
     consola.error(errorMessage);
 
@@ -197,12 +198,12 @@ export class GenesisChecker {
       await fs.writeFile(FAIL_ARTIFACTS.in, input);
       await fs.writeFile(FAIL_ARTIFACTS.std, stdOut);
       await fs.writeFile(FAIL_ARTIFACTS.my, myOut);
-      consola.info(`💾 现场文件已保存:\n  - ${FAIL_ARTIFACTS.in}\n  - ${FAIL_ARTIFACTS.std}\n  - ${FAIL_ARTIFACTS.my}`);
+      consola.info(t('checker.artifactsSaved', FAIL_ARTIFACTS.in, FAIL_ARTIFACTS.std, FAIL_ARTIFACTS.my));
       if (type === 'WA') {
-        consola.info(`Hint: You can use \'diff -bB ${FAIL_ARTIFACTS.std} ${FAIL_ARTIFACTS.my}\' to see the difference.`);
+        consola.info(t('checker.diffHint', FAIL_ARTIFACTS.std, FAIL_ARTIFACTS.my));
       }
     } catch (error) {
-      consola.error('Failed to save failure artifacts:', error);
+      consola.error(t('checker.saveArtifactsFailed', error));
     }
     consola.error(`------------------------------------`);
   }

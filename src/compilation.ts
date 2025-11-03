@@ -12,19 +12,20 @@ import {
   DEFAULT_COMPILER_CONFIGS,
   getCompilerHelpMessage
 } from './compiler';
+import { t } from './i18n';
 
 // =============================================================================
-// --- 常量与默认配置 (Constants & Defaults) ---
+// --- Constants & Defaults ---
 // =============================================================================
 
 const TEMP_DIR = '.genesis';
 const CACHE_FILE = path.join(TEMP_DIR, 'cache.json');
 
 // =============================================================================
-// --- 类型定义 (Type Definitions) ---
+// --- Type Definitions ---
 // =============================================================================
 
-/** 缓存元数据结构，用于存储编译产物的信息 */
+/** Cache metadata structure for storing compilation artifact information. */
 interface CacheMetadata {
   [cacheKey: string]: {
     hash: string;
@@ -33,13 +34,13 @@ interface CacheMetadata {
 }
 
 // =============================================================================
-// --- 编译服务 (Compilation Service) ---
+// --- Compilation Service ---
 // =============================================================================
 
 /**
- * (协调器) 智能编译模块：处理缓存、并在需要时重新编译。
- * 这是编译逻辑的主入口，它将复杂流程委托给多个职责单一的辅助方法。
- * @returns {Promise<string | null>} 编译成功返回可执行文件路径，失败则返回 null。
+ * (Coordinator) Smart compilation module: handles caching and recompiles when necessary.
+ * This is the main entry point for compilation logic, delegating to single-responsibility helpers.
+ * @returns {Promise<string | null>} The path to the executable if compilation is successful, otherwise null.
  */
 export async function getExecutable(
   sourceFile: string,
@@ -50,14 +51,14 @@ export async function getExecutable(
     consola.error(getCompilerHelpMessage());
     return null;
   }
-  consola.info(`Using compiler: ${compilerCommand}`);
+  consola.info(t('compilation.usingCompiler', compilerCommand));
 
   const profile = await getCompilationProfile(sourceFile, compilerCommand, config.compilerFlags);
   const cacheKey = `${sourceFile}-${compilerCommand}`;
 
   const cachedExecutable = await findCachedExecutable(cacheKey, profile.hash);
   if (cachedExecutable) {
-    consola.info(`Hash match. Using cached executable for ${sourceFile}.`);
+    consola.info(t('compilation.hashMatch', sourceFile));
     return cachedExecutable;
   }
 
@@ -65,18 +66,18 @@ export async function getExecutable(
 }
 
 /**
- * (辅助) 确定要使用的编译器命令。
- * @returns {Promise<string | null>} 返回找到的编译器命令，否则返回 null。
+ * (Helper) Determines the compiler command to use.
+ * @returns {Promise<string | null>} The resolved compiler command, or null if none is found.
  */
 async function resolveCompiler(userCompiler?: string): Promise<string | null> {
   return userCompiler || await findSystemCompiler();
 }
 
 /**
- * (辅助) 计算当前编译配置的唯一特征信息（哈希和编译标志）。
- * @param sourceFile - 解决方案的源文件路径。
- * @param compilerCommand - 使用的编译器命令。
- * @returns {Promise<{ hash: string, flags: string[] }>} 包含哈希和最终编译标志的对象。
+ * (Helper) Computes the unique profile (hash and flags) for the current compilation config.
+ * @param sourceFile - Path to the solution source file.
+ * @param compilerCommand - The compiler command being used.
+ * @returns {Promise<{ hash: string, flags: string[] }>} An object containing the hash and final compilation flags.
  */
 async function getCompilationProfile(
   sourceFile: string,
@@ -96,38 +97,38 @@ async function getCompilationProfile(
 }
 
 /**
- * (辅助) 检查并返回有效的、依然存在于文件系统中的缓存可执行文件路径。
- * @param cacheKey - 由源文件名和编译器组成的缓存键。
- * @param currentHash - 当前编译配置的哈希值。
- * @returns {Promise<string | null>} 如果找到有效缓存则返回可执行文件路径，否则返回 null。
+ * (Helper) Checks for and returns a valid, existing cached executable path.
+ * @param cacheKey - The cache key, composed of the source file and compiler.
+ * @param currentHash - The hash of the current compilation profile.
+ * @returns {Promise<string | null>} The path to the executable if a valid cache is found, otherwise null.
  */
 async function findCachedExecutable(cacheKey: string, currentHash: string): Promise<string | null> {
   let cache: CacheMetadata = {};
   try {
     cache = JSON.parse(await fs.readFile(CACHE_FILE, 'utf-8'));
   } catch {
-    return null; // 缓存文件不存在或无法解析
+    return null; // Cache file doesn't exist or is unparsable
   }
 
   const entry = cache[cacheKey];
   if (entry && entry.hash === currentHash) {
     try {
-      await fs.access(entry.executablePath); // 确认文件物理上还存在
+      await fs.access(entry.executablePath); // Verify the file still physically exists
       return entry.executablePath;
     } catch {
-      consola.warn('Cached executable record found, but the file is missing. Forcing recompilation.');
+      consola.warn(t('compilation.cacheMissing'));
     }
   }
   return null;
 }
 
 /**
- * (辅助) 执行编译命令，并在成功后更新缓存文件。
- * @param sourceFile - C++ 解决方案的源文件路径。
- * @param compilerCommand - 使用的编译器命令。
- * @param profile - 包含哈希和编译标志的编译配置对象。
- * @param cacheKey - 用于写入缓存的键。
- * @returns {Promise<string | null>} 编译成功返回可执行文件路径，失败则返回 null。
+ * (Helper) Executes the compilation command and updates the cache on success.
+ * @param sourceFile - Path to the C++ solution source file.
+ * @param compilerCommand - The compiler command to use.
+ * @param profile - The compilation profile object, containing the hash and flags.
+ * @param cacheKey - The key for writing to the cache.
+ * @returns {Promise<string | null>} The path to the executable on success, otherwise null.
  */
 async function executeCompilation(
   sourceFile: string,
@@ -135,26 +136,26 @@ async function executeCompilation(
   profile: { hash: string, flags: string[] },
   cacheKey: string
 ): Promise<string | null> {
-  const spinner = ora(`Compiling ${sourceFile} with ${compilerCommand}...`).start();
+  const spinner = ora(t('compilation.compiling', sourceFile, compilerCommand)).start();
   const executableName = path.parse(sourceFile).name;
   const executableSuffix = process.platform === 'win32' ? '.exe' : '';
   const executablePath = path.join(TEMP_DIR, `${executableName}-${profile.hash.substring(0, 8)}${executableSuffix}`);
 
   try {
     await execa(compilerCommand, [sourceFile, '-o', executablePath, ...profile.flags]);
-    spinner.succeed(`Compiled: ${sourceFile}`);
+    spinner.succeed(t('compilation.compiled', sourceFile));
 
     await updateCache(cacheKey, profile.hash, executablePath);
     return executablePath;
   } catch (error: any) {
-    spinner.fail(`Failed to compile ${sourceFile}`);
-    consola.error('Compiler error:', error.stderr || error.message);
+    spinner.fail(t('compilation.compileFailed', sourceFile));
+    consola.error(t('compilation.compilerError', error.stderr || error.message));
     return null;
   }
 }
 
 /**
- * (辅助) 更新缓存文件。这是一个原子操作，以提高代码清晰度。
+ * (Helper) Updates the cache file. Made atomic to improve code clarity.
  * @param cacheKey
  * @param hash
  * @param executablePath
@@ -163,7 +164,7 @@ async function updateCache(cacheKey: string, hash: string, executablePath: strin
   let cache: CacheMetadata = {};
   try {
     cache = JSON.parse(await fs.readFile(CACHE_FILE, 'utf-8'));
-  } catch {} // 忽略读取错误，我们将创建一个新的
+  } catch {} // Ignore read errors, we'll create a new one
   
   cache[cacheKey] = { hash, executablePath };
   await fs.writeFile(CACHE_FILE, JSON.stringify(cache, null, 2));

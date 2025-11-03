@@ -1,117 +1,120 @@
 // src/types.ts
 
 /**
- * Genesis 的核心配置对象。
- * 用户通过 Maker.configure() 传入此对象来定制生成行为。
+ * The core configuration object for Genesis.
+ * Users pass this object to `Maker.configure()` to customize generation behavior.
  */
 export interface GenesisConfig {
   /**
-   * C++ 解决方案的源文件路径。
-   * @default ['std.cpp', 'main.cpp', 'solution.cpp'] // 会自动按顺序查找
+   * The path to the C++ solution source file.
+   * @default ['std.cpp', 'main.cpp', 'solution.cpp'] // Automatically searched in order
    */
   solution?: string;
 
   /**
-   * 生成的测试数据的输出目录。
+   * The output directory for the generated test data.
    * @default 'data'
    */
   outputDir?: string;
 
   /**
-   * 测试用例文件的起始编号。
+   * The starting number for test case files.
    * @default 1
    */
   startFrom?: number;
 
   /**
-   * 指定要使用的 C++ 编译器命令。
-   * 如果不指定，Genesis 会自动探测 'g++' 或 'clang++'。
+   * Specifies the C++ compiler command to use.
+   * If not specified, Genesis will automatically detect 'g++' or 'clang++'.
    * @example 'g++-12'
    */
   compiler?: string;
 
   /**
-   * 传递给 C++ 编译器的额外标志。
+   * Extra flags to pass to the C++ compiler.
    * @default ['-O2', '-std=c++17']
    */
   compilerFlags?: string[];
 }
 
 /**
- * 描述一个待生成的测试用例的内部结构。
+ * Describes the internal structure of a test case to be generated.
  */
 export interface Case {
   /**
-   * 生成器函数，返回结构化数据。
+   * The generator function that returns structured data.
    */
   generator: () => any;
   /**
-   * 测试用例的可选标签，用于日志输出。
+   * An optional label for the test case, used in logging.
    */
   label?: string;
 }
 
 export interface DebugOptions {
-  /** * 数组元素之间的分隔符. 
-   * @default ' ' 
+  /**
+   * The separator between array elements.
+   * @default ' '
    */
   separator?: string;
-  /** * 是否在数组/矩阵前打印其维度 (e.g., "5", "10 5").
-   * @default false 
+  /**
+   * Whether to print the dimensions before an array/matrix (e.g., "5", "10 5").
+   * @default false
    */
   printDims?: boolean;
-  /** * 是否打印推断出的数据类型.
-   * @default true 
+  /**
+   * Whether to print the inferred data type.
+   * @default true
    */
   printType?: boolean;
   /**
-   * 对于数字数组/矩阵, 是否打印统计信息 (min, max, sum).
+   * For numeric arrays/matrices, whether to print statistics (min, max, sum).
    * @default false
    */
   printStats?: boolean;
   /**
-   * 对于大型数组, 最多显示的行数/元素数. 超出部分会显示 '...'.
+   * For large arrays, the maximum number of rows/elements to display. Others are shown as '...'.
    * @default 50
    */
   truncate?: number;
 }
 
 /**
- * 对拍模式
- * - `normalized`: 忽略行尾空格、忽略空行 (模拟 `diff -bB`)
- * - `exact`: 进行严格的文本全等比较
+ * The comparison mode for the checker.
+ * - `normalized`: Ignores trailing whitespace and blank lines (simulates `diff -bB`).
+ * - `exact`: Performs a strict, character-by-character comparison.
  */
 export type CompareMode = 'normalized' | 'exact';
 
 /**
- * Checker 的核心配置对象。
+ * The core configuration object for the Checker.
  */
 export interface CheckerConfig {
   /**
-   * 标准程序（正确程序）的源文件路径。
+   * The path to the source file of the standard (correct) solution.
    */
   std: string;
 
   /**
-   * 待测试程序的源文件路径。
+   * The path to the source file of the program to be tested.
    */
   target: string;
 
   /**
-   * 指定要使用的 C++ 编译器命令。
-   * 如果不指定，Genesis 会自动探测 'g++' 或 'clang++'。
+   * Specifies the C++ compiler command to use.
+   * If not specified, Genesis will automatically detect 'g++' or 'clang++'.
    * @example 'g++-12'
    */
   compiler?: GenesisConfig['compiler'];
 
   /**
-   * 传递给 C++ 编译器的额外标志。
+   * Extra flags to pass to the C++ compiler.
    * @default ['-O2', '-std=c++17']
    */
   compilerFlags?: GenesisConfig['compilerFlags'];
 
   /**
-   * 对比模式。
+   * The comparison mode.
    * @default 'normalized'
    */
   compareMode?: CompareMode;
