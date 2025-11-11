@@ -1,5 +1,5 @@
 // src/generator.ts
-import type { DebugOptions } from './types'
+import type { DebugOptions, TreeOptions, GraphOptions } from './types'
 import pc from 'picocolors';
 import { shuffle as esShuffle, sampleSize as esSampleSize, chunk as esChunk } from 'es-toolkit';
 
@@ -192,6 +192,33 @@ interface IGenerator {
    * @example G.maze(11, 11, { wall: '#', road: '.' })
    */
   maze(rows: number, cols: number, options?: { wall?: string, road?: string }): string[][];
+
+  /**
+   * 🌳 Generates a tree with n vertices.
+   * This is a convenience wrapper around `G.graph(n, n - 1, { connected: true, ... })`.
+   * @param n The number of vertices.
+   * @param options Configuration options for the tree.
+   * @returns An edge list representing the tree.
+   * @example
+   * G.tree(10) // A random tree with 10 vertices
+   * G.tree(5, { type: 'path' }) // A path graph: 1-2-3-4-5
+   */
+  tree(n: number, options?: TreeOptions): number[][];
+
+  /**
+   * 🕸️ Generates a graph with n vertices and m edges.
+   * The most powerful graph generation tool.
+   * @param n The number of vertices.
+   * @param m The number of edges.
+   * @param options Configuration options for the graph.
+   * @returns An edge list representing the graph, e.g., `[[u, v, w], ...]`.
+   * @example
+   * // A simple undirected, connected graph with 10 vertices and 12 edges
+   * G.graph(10, 12, { connected: true })
+   * // A directed, weighted DAG
+   * G.graph(10, 15, { type: 'dag', directed: true, weighted: [1, 100] })
+   */
+  graph(n: number, m: number, options?: GraphOptions): number[][];
 
   /**
    * Generates a permutation from 1 to n (or 0 to n-1).
@@ -513,6 +540,135 @@ export const G: IGenerator = {
         }
     }
     return grid;
+  },
+
+  tree(n: number, options: TreeOptions = {}): number[][] {
+    const { type = 'random', oneBased = true, weighted = false } = options;
+
+    if (n <= 0) return [];
+    if (n === 1) return [];
+
+    const edges: number[][] = [];
+
+    if (type === 'path') {
+      const nodes = this.permutation(n, false);
+      for (let i = 0; i < n - 1; i++) {
+        edges.push([nodes[i], nodes[i+1]]);
+      }
+    } else if (type === 'star') {
+      const nodes = this.permutation(n, false);
+      const center = nodes[0];
+      for (let i = 1; i < n; i++) {
+        edges.push([center, nodes[i]]);
+      }
+    } else { // random
+      const nodes = this.permutation(n, false);
+      // A simple and effective way to generate a random tree (related to Prüfer sequences)
+      for (let i = 1; i < n; i++) {
+        const u = nodes[i];
+        const v = nodes[this.int(0, i - 1)];
+        edges.push([u, v]);
+      }
+    }
+    
+    let result = this.shuffle(edges);
+
+    if (weighted) {
+      const [minW, maxW] = Array.isArray(weighted) ? weighted : [1, 1_000_000_000];
+      result.forEach(edge => edge.push(this.int(minW, maxW)));
+    }
+
+    if (oneBased) {
+      result = result.map(edge => edge.map(val => val + 1));
+    }
+
+    return result;
+  },
+
+  graph(n: number, m: number, options: GraphOptions = {}): number[][] {
+    const {
+      type = 'simple',
+      directed = false,
+      weighted = false,
+      connected = false,
+      noSelfLoops = true,
+      oneBased = true,
+    } = options;
+
+    // --- 1. Input Validation ---
+    if (n <= 0) return [];
+    if (type === 'tree') {
+      if (m !== n - 1) throw new Error(`A tree with ${n} vertices must have ${n - 1} edges, but ${m} were requested.`);
+    }
+    if (connected && m < n - 1) {
+      throw new Error(`A connected graph with ${n} vertices must have at least ${n - 1} edges.`);
+    }
+    const maxEdges = noSelfLoops ? n * (n - 1) / 2 : n * (n + 1) / 2;
+    if (!directed && m > maxEdges) {
+      throw new Error(`An undirected simple graph with ${n} vertices can have at most ${maxEdges} edges.`);
+    }
+
+    // --- 2. Edge Generation ---
+    const edgeSet = new Set<string>();
+    const addEdge = (u: number, v: number) => {
+      if (noSelfLoops && u === v) return false;
+      const key = directed ? `${u},${v}` : `${Math.min(u, v)},${Math.max(u, v)}`;
+      if (edgeSet.has(key)) return false;
+      edgeSet.add(key);
+      return true;
+    };
+
+    if (type === 'tree') {
+      return this.tree(n, { oneBased, weighted });
+    }
+
+    if (connected) {
+      // Start by generating a random tree to ensure connectivity
+      const treeEdges = this.tree(n, { type: 'random', oneBased: false });
+      treeEdges.forEach(([u, v]) => addEdge(u, v));
+    }
+
+    if (type === 'dag') {
+      const nodes = this.permutation(n, false); // Defines a topological sort
+      while (edgeSet.size < m) {
+        const u_idx = this.int(0, n - 1);
+        const v_idx = this.int(0, n - 1);
+        if (u_idx === v_idx) continue;
+        const u = nodes[Math.min(u_idx, v_idx)];
+        const v = nodes[Math.max(u_idx, v_idx)];
+        addEdge(u, v); // Edge always goes from lower index to higher index in permutation
+      }
+    } else if (type === 'bipartite') {
+      const nodes = this.permutation(n, false);
+      const partition_size = this.int(1, n - 1);
+      const setA = nodes.slice(0, partition_size);
+      const setB = nodes.slice(partition_size);
+      while (edgeSet.size < m) {
+        const u = this.sample(setA);
+        const v = this.sample(setB);
+        addEdge(u, v);
+      }
+    } else { // 'simple'
+      while (edgeSet.size < m) {
+        const u = this.int(0, n - 1);
+        const v = this.int(0, n - 1);
+        addEdge(u, v);
+      }
+    }
+
+    // --- 3. Post-processing ---
+    let result = Array.from(edgeSet).map(key => key.split(',').map(Number));
+
+    if (weighted) {
+      const [minW, maxW] = Array.isArray(weighted) ? weighted : [1, 1_000_000_000];
+      result.forEach(edge => edge.push(this.int(minW, maxW)));
+    }
+
+    if (oneBased) {
+      result = result.map(edge => edge.map(val => val + 1));
+    }
+
+    return this.shuffle(result);
   },
 
   permutation(n, oneBased = true) {

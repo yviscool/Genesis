@@ -407,6 +407,214 @@ describe('G (Generator)', () => {
     });
   });
 
+  describe('G.tree', () => {
+    test('should generate a random tree with correct number of vertices and edges', () => {
+      const n = 10;
+      const tree = G.tree(n);
+      const nodes = new Set<number>();
+      tree.forEach(([u, v]) => {
+        nodes.add(u);
+        nodes.add(v);
+      });
+      expect(tree.length).toBe(n - 1);
+      expect(nodes.size).toBe(n);
+    });
+
+    test('should generate a path graph', () => {
+      const n = 5;
+      const tree = G.tree(n, { type: 'path' });
+      const degrees = new Map<number, number>();
+      tree.forEach(([u, v]) => {
+        degrees.set(u, (degrees.get(u) || 0) + 1);
+        degrees.set(v, (degrees.get(v) || 0) + 1);
+      });
+      
+      let leafNodes = 0;
+      let internalNodes = 0;
+      for (const degree of degrees.values()) {
+        if (degree === 1) leafNodes++;
+        if (degree === 2) internalNodes++;
+      }
+      
+      expect(tree.length).toBe(n - 1);
+      expect(leafNodes).toBe(2);
+      expect(internalNodes).toBe(n - 2);
+    });
+
+    test('should generate a star graph', () => {
+      const n = 7;
+      const tree = G.tree(n, { type: 'star' });
+      const degrees = new Map<number, number>();
+      tree.forEach(([u, v]) => {
+        degrees.set(u, (degrees.get(u) || 0) + 1);
+        degrees.set(v, (degrees.get(v) || 0) + 1);
+      });
+
+      let centerNode = 0;
+      let leafNodes = 0;
+      for (const degree of degrees.values()) {
+        if (degree === n - 1) centerNode++;
+        if (degree === 1) leafNodes++;
+      }
+
+      expect(tree.length).toBe(n - 1);
+      expect(centerNode).toBe(1);
+      expect(leafNodes).toBe(n - 1);
+    });
+
+    test('should respect oneBased: false option', () => {
+      const tree = G.tree(5, { oneBased: false });
+      const nodes = new Set<number>();
+      tree.forEach(([u, v]) => {
+        nodes.add(u);
+        nodes.add(v);
+      });
+      expect(Math.min(...nodes)).toBe(0);
+      expect(Math.max(...nodes)).toBe(4);
+    });
+
+    test('should generate weighted edges', () => {
+      const tree = G.tree(8, { weighted: [10, 20] });
+      expect(tree[0].length).toBe(3);
+      tree.forEach(edge => {
+        expect(edge[2]).toBeGreaterThanOrEqual(10);
+        expect(edge[2]).toBeLessThanOrEqual(20);
+      });
+    });
+  });
+
+  describe('G.graph', () => {
+    test('should generate a simple graph with n vertices and m edges', () => {
+      const n = 20;
+      const m = 50;
+      const graph = G.graph(n, m);
+      const nodes = new Set<number>();
+      graph.forEach(([u, v]) => {
+        nodes.add(u);
+        nodes.add(v);
+      });
+      expect(graph.length).toBe(m);
+      // Note: Not all nodes are guaranteed to be in an edge set if m is small
+    });
+
+    test('should not generate self-loops by default', () => {
+      const graph = G.graph(10, 30, { noSelfLoops: true });
+      graph.forEach(([u, v]) => {
+        expect(u).not.toBe(v);
+      });
+    });
+
+    test('should generate a connected graph', () => {
+      const n = 15;
+      const m = 20;
+      const graph = G.graph(n, m, { connected: true });
+      
+      const adj = new Map<number, number[]>();
+      for(let i = 1; i <= n; i++) adj.set(i, []);
+
+      graph.forEach(([u, v]) => {
+        adj.get(u)?.push(v);
+        adj.get(v)?.push(u);
+      });
+
+      const visited = new Set<number>();
+      const q = [1];
+      visited.add(1);
+      while(q.length > 0) {
+        const u = q.shift()!;
+        adj.get(u)?.forEach(v => {
+          if (!visited.has(v)) {
+            visited.add(v);
+            q.push(v);
+          }
+        });
+      }
+      
+      expect(graph.length).toBe(m);
+      expect(visited.size).toBe(n);
+    });
+
+    test('should generate a directed acyclic graph (DAG)', () => {
+      const n = 10;
+      const m = 15;
+      const graph = G.graph(n, m, { type: 'dag', directed: true, oneBased: false });
+      
+      const inDegree = new Array(n).fill(0);
+      const adj = new Map<number, number[]>();
+      for(let i = 0; i < n; i++) adj.set(i, []);
+
+      graph.forEach(([u, v]) => {
+        adj.get(u)?.push(v);
+        inDegree[v]++;
+      });
+
+      const q: number[] = [];
+      for (let i = 0; i < n; i++) {
+        if (inDegree[i] === 0) {
+          q.push(i);
+        }
+      }
+
+      let count = 0;
+      while(q.length > 0) {
+        const u = q.shift()!;
+        count++;
+        adj.get(u)?.forEach(v => {
+          inDegree[v]--;
+          if (inDegree[v] === 0) {
+            q.push(v);
+          }
+        });
+      }
+
+      expect(count).toBe(n); // If all nodes are visited, there is no cycle
+    });
+
+    test('should generate a bipartite graph', () => {
+      const n = 12;
+      const m = 20;
+      const graph = G.graph(n, m, { type: 'bipartite', oneBased: false });
+
+      const adj = new Map<number, number[]>();
+      for(let i = 0; i < n; i++) adj.set(i, []);
+      graph.forEach(([u, v]) => {
+        adj.get(u)?.push(v);
+        adj.get(v)?.push(u);
+      });
+
+      const colors = new Map<number, number>();
+      let isBipartite = true;
+
+      function bfs(startNode: number) {
+        if (colors.has(startNode)) return;
+        const q: [number, number][] = [[startNode, 0]];
+        colors.set(startNode, 0);
+
+        let head = 0;
+        while(head < q.length) {
+          const [u, color] = q[head++]!;
+          adj.get(u)?.forEach(v => {
+            if (!colors.has(v)) {
+              colors.set(v, 1 - color);
+              q.push([v, 1 - color]);
+            } else if (colors.get(v) === color) {
+              isBipartite = false;
+            }
+          });
+        }
+      }
+
+      for (let i = 0; i < n; i++) {
+        if (!isBipartite) break;
+        if (!colors.has(i)) {
+          bfs(i);
+        }
+      }
+
+      expect(isBipartite).toBe(true);
+    });
+  });
+
   // G.debug is primarily for console logging, so direct testing of its output is complex and often brittle.
   // It's usually sufficient to ensure it doesn't throw errors and potentially mock console.log if needed.
   // For now, we'll omit explicit tests for G.debug.

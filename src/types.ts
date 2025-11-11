@@ -80,6 +80,63 @@ export interface DebugOptions {
 }
 
 /**
+ * The type of graph to generate.
+ * - `simple`: A standard graph allowing cycles and multiple components.
+ * - `tree`: A connected acyclic graph.
+ * - `dag`: A directed acyclic graph.
+ * - `bipartite`: A graph whose vertices can be divided into two disjoint sets.
+ */
+export type GraphType = 'simple' | 'tree' | 'dag' | 'bipartite';
+
+/**
+ * Configuration options for `G.graph`.
+ */
+export interface GraphOptions {
+  /** The type of graph to generate. @default 'simple' */
+  type?: GraphType;
+  /** Whether the graph is directed. @default false */
+  directed?: boolean;
+  /** 
+   * Whether edges are weighted. 
+   * - `true`: weights from 1 to 1,000,000,000.
+   * - `[min, max]`: weights in the specified range.
+   * @default false
+   */
+  weighted?: boolean | [number, number];
+  /** Whether to ensure the graph is connected. @default false */
+  connected?: boolean;
+  /** Whether to prevent self-loops (e.g., u-u). @default true */
+  noSelfLoops?: boolean;
+  /** Whether vertex numbering is 1-based. @default true */
+  oneBased?: boolean;
+}
+
+/**
+ * The type of tree to generate.
+ * - `random`: A random tree structure.
+ * - `path`: A tree where vertices form a single chain.
+ * - `star`: A tree with a central vertex connected to all others.
+ */
+export type TreeType = 'random' | 'path' | 'star';
+
+/**
+ * Configuration options for `G.tree`.
+ */
+export interface TreeOptions {
+  /** The type of tree structure to generate. @default 'random' */
+  type?: TreeType;
+  /** 
+   * Whether edges are weighted. 
+   * - `true`: weights from 1 to 1,000,000,000.
+   * - `[min, max]`: weights in the specified range.
+   * @default false
+   */
+  weighted?: boolean | [number, number];
+  /** Whether vertex numbering is 1-based. @default true */
+  oneBased?: boolean;
+}
+
+/**
  * The comparison mode for the checker.
  * - `normalized`: Ignores trailing whitespace and blank lines (simulates `diff -bB`).
  * - `exact`: Performs a strict, character-by-character comparison.
