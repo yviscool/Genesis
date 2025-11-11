@@ -579,7 +579,15 @@ export const G: IGenerator = {
     }
 
     if (oneBased) {
-      result = result.map(edge => edge.map(val => val + 1));
+      result = result.map(edge => {
+        // Only increment node indices (first two elements), not weights
+        const newEdge = [edge[0] + 1, edge[1] + 1];
+        // If there's a weight (third element), keep it unchanged
+        if (edge.length > 2) {
+          newEdge.push(edge[2]);
+        }
+        return newEdge;
+      });
     }
 
     return result;
