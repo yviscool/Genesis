@@ -1,7 +1,7 @@
 {
   "name": "genesis-kit",
   "version": "1.0.0",
-  "description": "为算法竞赛(OI/ACM)设计的, 简单易用的测试数据生成器与对拍器。",
+  "description": "Simple and easy-to-use test data generator and comparator designed for algorithm competitions (OI/ACM).",
   "keywords": [
     "oi",
     "acm",
@@ -22,6 +22,9 @@
   "repository": {
     "type": "git",
     "url": "git+https://github.com/yviscool/Genesis"
+  },
+  "bin": {
+    "genesis": "./dist/cli.js"
   },
   "module": "./dist/index.mjs",
   "type": "module",
@@ -55,6 +58,8 @@
     "es-toolkit": "^1.40.0",
     "execa": "^9.6.0",
     "ora": "^9.0.0",
-    "picocolors": "^1.1.1"
+    "picocolors": "^1.1.1",
+    "cac": "^6.7.14",
+    "tsx": "^4.20.6"
   }
 }

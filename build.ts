@@ -4,62 +4,95 @@ import { $ } from 'bun'
 import path from 'path'
 
 /**
- * Config
+ • Config
+
  */
 const OUT_DIR = 'dist'
 const BUN_OUT_DIR = path.join(OUT_DIR, 'bun')
 
 /**
- * external: 不希望被打包进最终产物的依赖（peerDependencies/大依赖）
- * 根据项目实际情况添加，比如 'typescript'、'es-toolkit' 等（如果你希望外部依赖由用户安装）
+ • external: Dependencies that should not be bundled.
+
+ • 'typescript' is a peer dependency.
+
  */
 const EXTERNAL = ['typescript']
 
 /**
- * Clean
+ • Clean
+
  */
 console.log('🧹 Cleaning', OUT_DIR)
 try {
   await $`rm -rf ${OUT_DIR}`
 } catch (err) {
-  // 若 rm 失败也继续（容错）
   console.warn('warning: rm -rf failed', err)
 }
 
 /**
- * Node build (cjs + esm) with declarations
- * tsup 的 dts: true 会自动生成 .d.ts（需项目安装 typescript）
+ • Build Step 1: Library (CJS + ESM)
+
+ • Bundles the library code from src/index.ts.
+
  */
-console.log('🔧 Building Node (CJS + ESM) with tsup...')
+console.log('🔧 Building library (CJS + ESM) with tsup...')
 try {
   await tsupBuild({
-    entry: ['src/**/*.ts'],
+    entry: ['src/index.ts'],
     format: ['cjs', 'esm'],
     outDir: OUT_DIR,
-    dts: true,           // 生成类型声明文件 (.d.ts)
+    dts: true,
     sourcemap: true,
-    clean: false,        // 我们前面已经手动清理过 dist
-    minify: false,       // 根据需要可以改为 true
+    clean: false,
+    minify: false,
     splitting: false,
-    bundle: false,
+    bundle: true, // Bundle the library into single files
     external: EXTERNAL
   })
-  console.log('✅ Node build complete')
+  console.log('✅ Library build complete')
 } catch (err) {
-  console.error('❌ Node build failed:', err)
-  // 非零退出码，CI 会失败
+  console.error('❌ Library build failed:', err)
   throw err
 }
+
+/**
+ • Build Step 2: CLI (ESM)
+
+ • Bundles the CLI code from src/cli.ts into a single executable file.
+
+ */
+console.log('🔧 Building CLI with tsup...')
+try {
+  await tsupBuild({
+    entry: { 'cli': 'src/cli/index.ts' },
+    format: ['esm'],
+    outDir: OUT_DIR,
+    dts: false,
+    sourcemap: false,
+    clean: false,
+    minify: true,
+    splitting: false,
+    bundle: true, // Bundle the CLI and its dependencies
+    external: EXTERNAL,
+  })
+  console.log('✅ CLI build complete')
+} catch (err) {
+  console.error('❌ CLI build failed:', err)
+  throw err
+}
+
 
 await $`tsc --project tsconfig.dts.json`
 
 /**
- * Bun optimized build
- * - 输出到 dist/bun
+ • Bun optimized build (Library only)
+
+ • - Outputs to dist/bun
+
  */
+if (process.versions.bun) {
   console.log('⚡ Detected Bun runtime — building Bun optimized bundle...')
   try {
-    // Bun.build options
     await (Bun as any).build({
       entrypoints: ['./src/index.ts'],
       outdir: BUN_OUT_DIR,
@@ -77,6 +110,31 @@ await $`tsc --project tsconfig.dts.json`
     console.error('❌ Bun build failed:', err)
     throw err
   }
+}
 
 console.log('🎉 All builds finished. Output ->', OUT_DIR)
+
+
+/**
+ * 步骤 X: 复制静态资源 (locales)
+ * tsup 不会打包 .json 文件，所以我们手动复制
+ */
+console.log('📂 Copying static assets (locales)...');
+try {
+  const LOCALE_SRC = path.join('src', 'locales');
+  const LOCALE_DEST = path.join(OUT_DIR, 'locales');
+
+  // 1. 创建目标目录
+  await $`mkdir -p ${LOCALE_DEST}`;
+
+  // 2. 复制所有 .json 文件
+  await $`cp ${LOCALE_SRC}/*.json ${LOCALE_DEST}/`;
+
+  console.log('✅ Static assets copied');
+} catch (err) {
+  console.error('❌ Failed to copy static assets:', err);
+  throw err;
+}
+
+console.log('🎉 All builds finished. Output ->', OUT_DIR);
 process.exit()
