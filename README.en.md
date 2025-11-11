@@ -1,20 +1,40 @@
 # Genesis: A Test Data Generator for Competitive Programming
 
+[![npm version](https://img.shields.io/npm/v/genesis-kit.svg)](https://www.npmjs.com/package/genesis-kit)
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
+
 **Genesis** is an incredibly simple and easy-to-use test data generation tool tailored for algorithm contest organizers, contestants, and coaches. It automates tedious processes like compilation, data generation, file I/O, and solution checking, allowing you to focus on the **design of the data itself**, rather than the implementation details.
 
 ## ✨ Core Features
 
 *   **Declarative API**: Intuitively define data generation and checking with chained calls like `.case()` and `.run()`, making your code structure highly consistent with your logic.
 *   **Built-in Checker**: Automatically runs the standard and target solutions, performs high-fidelity output comparison (Diff), and quickly pinpoints `WA`/`TLE`.
-*   **Powerful Data Generator (`G`)**: Comes with a rich set of convenient generation functions (`G.int`, `G.permutation`, `G.matrix`, `G.even`, etc.) that cover 99% of basic data needs.
+*   **Powerful Data Generator (`G`)**: Comes with a rich set of convenient generation functions (`G.int`, `G.permutation`, `G.matrix`, `G.even`, `G.tree`, `G.graph`, etc.) that cover 99% of basic data needs.
 *   **Intelligent Formatting**: You only need to return structured data (e.g., `[[n, m], grid]`), and Genesis will automatically handle spaces and newlines to generate compliant `.in` files. **It correctly handles both numeric matrices and string arrays for `grid`!**
 *   **Automatic Compilation & Caching**: Auto-detects C++ compilers (`g++` / `clang++`) and compiles your standard and tested solutions. An intelligent caching mechanism based on file content and compilation parameters avoids redundant compilations, significantly boosting efficiency.
 *   **High Performance**: Leverages Node.js's asynchronous nature and multi-core CPUs, allowing `Maker` to generate all test cases in parallel and `Checker` to perform high-speed solution checking.
+*   **CLI Tool**: Provides convenient command-line tools for project initialization, data generation, solution checking, and cleanup operations.
 *   **Cross-Platform**: Works seamlessly on Windows (MSYS2/MinGW), macOS, and Linux.
 
 ## 🚀 Quick Start (Maker)
 
-`Maker` is used for batch generating `.in` / `.out` files.
+### CLI Tool
+
+Genesis provides convenient command-line tools for the following operations:
+
+```bash
+# Initialize a project (create template files)
+genesis init
+
+# Generate data
+genesis make
+
+# Run solution checking
+genesis check
+
+# Clean generated files
+genesis clean
+```
 
 ### 1. Installation
 
@@ -259,6 +279,13 @@ The `G` object provides a series of out-of-the-box data generation functions.
 | `G.permutation(n, oneBased?)` | Generates a permutation of `n` (starts from 1 by default).
 | `G.shuffle(arr)`              | Shuffles an array randomly (returns a new array).
 | `G.sample(arr, k)`            | Samples `k` unique elements from an array.
+
+#### Trees & Graphs
+
+| Function                          | Description                                               | Example                                       |
+| ----------------------------- | ----------------------------------------------------------- | --------------------------------------------- |
+| `G.tree(n, options?)`         | Generates a tree with `n` vertices. Supports path, star, random and other types. | `G.tree(5)` -> `[[1,2],[2,3],[3,4],[4,5]]` |
+| `G.graph(n, m, options?)`     | Generates a graph with `n` vertices and `m` edges. Supports connectivity, weights, direction and other configurations. | `G.graph(5, 7, {connected: true})` -> edge list |
 
 #### Dates
 
