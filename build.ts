@@ -1,69 +1,56 @@
 // build.ts
-import { build as tsupBuild } from 'tsup'
-import { $ } from 'bun'
+import { build as tsdownBuild } from 'tsdown'
 import path from 'path'
 
 /**
- • Config
-
+ * Config
  */
 const OUT_DIR = 'dist'
 const BUN_OUT_DIR = path.join(OUT_DIR, 'bun')
 
 /**
- • external: Dependencies that should not be bundled.
-
- • 'typescript' is a peer dependency.
-
+ * external: Dependencies that should not be bundled.
+ * 'typescript' is a peer dependency.
  */
 const EXTERNAL = ['typescript']
 
 /**
- • Clean
-
+ * Build Step 1: Library (CJS + ESM) & Static Assets
  */
-console.log('🧹 Cleaning', OUT_DIR)
+console.log('🔧 Building library (CJS + ESM) and copying assets with tsdown...')
 try {
-  await $`rm -rf ${OUT_DIR}`
-} catch (err) {
-  console.warn('warning: rm -rf failed', err)
-}
-
-/**
- • Build Step 1: Library (CJS + ESM)
-
- • Bundles the library code from src/index.ts.
-
- */
-console.log('🔧 Building library (CJS + ESM) with tsup...')
-try {
-  await tsupBuild({
+  await tsdownBuild({
     entry: ['src/index.ts'],
     format: ['cjs', 'esm'],
     outDir: OUT_DIR,
-    dts: true,
+    // --- CHANGE 1: Use dts object to resolve into a single .d.ts file ---
+    dts: {
+      resolve: true,
+    },
     sourcemap: true,
-    clean: false,
+    clean: true,
     minify: false,
-    splitting: false,
-    bundle: true, // Bundle the library into single files
-    external: EXTERNAL
+    external: EXTERNAL,
+    copy: [
+      { from: 'src/locales', to: 'dist/locales' }
+    ],
+    // --- CHANGE 2: Customize output extensions to match package.json ---
+    outExtensions: ({ format }) => ({
+      js: format === 'cjs' ? '.js' : '.mjs',
+    }),
   })
-  console.log('✅ Library build complete')
+  console.log('✅ Library build and asset copy complete')
 } catch (err) {
   console.error('❌ Library build failed:', err)
   throw err
 }
 
 /**
- • Build Step 2: CLI (ESM)
-
- • Bundles the CLI code from src/cli.ts into a single executable file.
-
+ * Build Step 2: CLI (ESM)
  */
-console.log('🔧 Building CLI with tsup...')
+console.log('🔧 Building CLI with tsdown...')
 try {
-  await tsupBuild({
+  await tsdownBuild({
     entry: { 'cli': 'src/cli/index.ts' },
     format: ['esm'],
     outDir: OUT_DIR,
@@ -71,9 +58,12 @@ try {
     sourcemap: false,
     clean: false,
     minify: true,
-    splitting: false,
-    bundle: true, // Bundle the CLI and its dependencies
     external: EXTERNAL,
+    // --- CHANGE 3: Force CLI output to be .js for the `bin` field ---
+    // Node.js will treat this as an ES Module because "type": "module" is in package.json
+    outExtensions: () => ({
+      js: '.js'
+    }),
   })
   console.log('✅ CLI build complete')
 } catch (err) {
@@ -81,29 +71,24 @@ try {
   throw err
 }
 
-
-await $`tsc --project tsconfig.dts.json`
-
 /**
- • Bun optimized build (Library only)
-
- • - Outputs to dist/bun
-
+ * Bun optimized build (Library only)
  */
 if (process.versions.bun) {
-  console.log('⚡ Detected Bun runtime — building Bun optimized bundle...')
+  console.log('⚡ Detected Bun runtime — building Bun optimized bundle with tsdown...')
   try {
-    await (Bun as any).build({
-      entrypoints: ['./src/index.ts'],
-      outdir: BUN_OUT_DIR,
-      minify: {
-        whitespace: true,
-        syntax: true,
-        identifiers: false
-      },
-      target: 'bun',
-      sourcemap: 'linked',
-      external: EXTERNAL
+    await tsdownBuild({
+      entry: ['./src/index.ts'],
+      outDir: BUN_OUT_DIR,
+      minify: true,
+      platform: 'node', // Suitable for Bun
+      sourcemap: true,
+      external: EXTERNAL,
+      clean: true,
+      // --- CHANGE 4: Force Bun output to be .js to match `exports` field ---
+      outExtensions: () => ({
+        js: '.js'
+      }),
     })
     console.log('✅ Bun build complete')
   } catch (err) {
@@ -113,28 +98,3 @@ if (process.versions.bun) {
 }
 
 console.log('🎉 All builds finished. Output ->', OUT_DIR)
-
-
-/**
- * 步骤 X: 复制静态资源 (locales)
- * tsup 不会打包 .json 文件，所以我们手动复制
- */
-console.log('📂 Copying static assets (locales)...');
-try {
-  const LOCALE_SRC = path.join('src', 'locales');
-  const LOCALE_DEST = path.join(OUT_DIR, 'locales');
-
-  // 1. 创建目标目录
-  await $`mkdir -p ${LOCALE_DEST}`;
-
-  // 2. 复制所有 .json 文件
-  await $`cp ${LOCALE_SRC}/*.json ${LOCALE_DEST}/`;
-
-  console.log('✅ Static assets copied');
-} catch (err) {
-  console.error('❌ Failed to copy static assets:', err);
-  throw err;
-}
-
-console.log('🎉 All builds finished. Output ->', OUT_DIR);
-process.exit()
