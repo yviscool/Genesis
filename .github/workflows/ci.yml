@@ -98,4 +98,5 @@ jobs:
       run: |
         # Run genesis-kit which is built in previous step
         bun dist/cli.js init --lang ${{ matrix.lang }} --force
+        bun dist/cli.js make
         bun dist/cli.js check

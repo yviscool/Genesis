@@ -105,9 +105,8 @@ print(a + b)
 `;
 
 const PYTHON_BUGGY = `a, b = map(int, input().split())
-# A buggy solution that doesn't handle large numbers correctly in some Python 2 versions
-# or can be a placeholder for other logic bugs.
-print(a + b)
+# A buggy solution that gives a wrong answer.
+print(a + b + 1)
 `;
 
 const JS_STD = `const readline = require('readline');
@@ -123,10 +122,10 @@ rl.on('line', (line) => {
 const JS_BUGGY = `const readline = require('readline');
 const rl = readline.createInterface({ input: process.stdin });
 
-// A buggy solution that uses Number, which may lose precision for large integers.
+// A buggy solution that gives a wrong answer.
 rl.on('line', (line) => {
-  const [a, b] = line.split(' ').map(Number);
-  console.log(a + b);
+  const [a, b] = line.split(' ').map(BigInt);
+  console.log((a + b + 1n).toString());
   rl.close();
 });
 `;

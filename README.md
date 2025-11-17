@@ -1,3 +1,5 @@
+[English Version](./README.en.md)
+
 # Genesis: 为算法竞赛而生的测试数据生成器
 
 [![npm version](https://img.shields.io/npm/v/genesis-kit.svg)](https://www.npmjs.com/package/genesis-kit)
