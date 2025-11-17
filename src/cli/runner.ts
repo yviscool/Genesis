@@ -15,16 +15,34 @@ export async function runScript(scriptName: 'make.ts' | 'check.ts') {
     process.exit(1);
   }
 
-  try {
-    // We use 'tsx' to run the user's TypeScript script.
-    // 'stdio: inherit' pipes the child process's output directly to our terminal,
-    // so the user sees the real-time output from Genesis-Kit's Maker/Checker.
-    await execa('tsx', [scriptPath], { stdio: 'inherit' });
-  } catch (error: any) {
-    // execa rejects if the process exits with a non-zero code.
-    // The actual error message from the script will already be printed
-    // to the console because of 'stdio: inherit'. We just need to exit
-    // to signal that the command failed.
-    process.exit(1);
+  // Define runners in order of preference: bun -> node -> tsx
+  const runners: [string, string[]][] = [
+    ['bun', [scriptPath]],
+    ['node', [scriptPath]],
+    ['tsx', [scriptPath]],
+  ];
+
+  for (let i = 0; i < runners.length; i++) {
+    const [command, args] = runners[i];
+    try {
+      // Attempt to run with the current runner
+      await execa(command, args, { stdio: 'inherit' });
+      // If successful, we're done.
+      return;
+    } catch (error: any) {
+      // If the command itself is not found, try the next runner.
+      if (error.code === 'ENOENT') {
+        consola.debug(`Runner '${command}' not found, trying next...`);
+        continue;
+      }
+      
+      // If the runner was found but the script failed (non-zero exit code),
+      // execa throws an error. We should exit the process and not try other runners.
+      process.exit(1);
+    }
   }
+
+  // If all runners failed to be found
+  consola.error('Could not find a suitable TypeScript runtime (bun, node, or tsx). Please install one.');
+  process.exit(1);
 }

@@ -97,5 +97,5 @@ jobs:
     - name: Test ${{ matrix.lang }} template
       run: |
         # Run genesis-kit which is built in previous step
-        node dist/cli.js init --lang ${{ matrix.lang }} --force
-        genesis check
+        bun dist/cli.js init --lang ${{ matrix.lang }} --force
+        bun dist/cli.js check
