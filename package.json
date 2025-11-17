@@ -1,6 +1,6 @@
 {
   "name": "genesis-kit",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Simple and easy-to-use test data generator and comparator designed for algorithm competitions (OI/ACM).",
   "keywords": [
     "oi",
