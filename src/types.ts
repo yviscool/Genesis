@@ -6,8 +6,8 @@
  */
 export interface GenesisConfig {
   /**
-   * The path to the C++ solution source file.
-   * @default ['std.cpp', 'main.cpp', 'solution.cpp'] // Automatically searched in order
+   * The path to the solution source file (e.g., 'std.cpp', 'main.go').
+   * If not specified, Genesis will search for common default filenames.
    */
   solution?: string;
 
@@ -24,15 +24,17 @@ export interface GenesisConfig {
   startFrom?: number;
 
   /**
-   * Specifies the C++ compiler command to use.
-   * If not specified, Genesis will automatically detect 'g++' or 'clang++'.
+   * Specifies the compiler command to use for compiled languages.
+   * If not specified, Genesis automatically detects the appropriate compiler 
+   * (e.g., 'g++', 'clang++', 'go', 'rustc', 'javac').
    * @example 'g++-12'
    */
   compiler?: string;
 
   /**
-   * Extra flags to pass to the C++ compiler.
-   * @default ['-O2', '-std=c++17']
+   * Extra flags to pass to the compiler for compiled languages.
+   * These are appended to the default flags for the detected language.
+   * @example ['-std=c++20']
    */
   compilerFlags?: string[];
 }
@@ -158,15 +160,14 @@ export interface CheckerConfig {
   target: string;
 
   /**
-   * Specifies the C++ compiler command to use.
-   * If not specified, Genesis will automatically detect 'g++' or 'clang++'.
+   * Specifies the compiler command to use for compiled languages.
+   * If not specified, Genesis automatically detects the appropriate compiler.
    * @example 'g++-12'
    */
   compiler?: GenesisConfig['compiler'];
 
   /**
-   * Extra flags to pass to the C++ compiler.
-   * @default ['-O2', '-std=c++17']
+   * Extra flags to pass to the compiler for compiled languages.
    */
   compilerFlags?: GenesisConfig['compilerFlags'];
 

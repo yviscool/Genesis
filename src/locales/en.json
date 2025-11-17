@@ -70,5 +70,6 @@
   "cli.init.nextSteps": "\nNext steps:\n  1. (Optional) cd into '{0}' if you aren't already there.\n  2. Modify 'std.cpp' with your standard solution.\n  3. Modify 'make.ts' to define your test data.\n  4. Run 'genesis make' to generate .in/.out files.\n  5. Run 'genesis check' to test your solution against the standard one.",
   "cli.init.failed": "Failed to initialize project: {0}",
   "cli.runner.notFound": "'{0}' not found in the current directory.",
-  "cli.runner.hint": "Did you forget to run 'genesis init'?"
+  "cli.runner.hint": "Did you forget to run 'genesis init'?",
+  "cli.index.langDescription": "Language template (cpp, go, rust, java, py, js)"
 }

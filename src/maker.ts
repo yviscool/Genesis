@@ -8,7 +8,7 @@ import path from 'node:path';
 import os from 'node:os';
 import { type GenesisConfig, type Case } from './types';
 import { formatData } from './formatter';
-import { getExecutable } from './compilation';
+import { prepareForExecution, type ExecutionResult } from './execution';
 import { t } from './i18n';
 
 // =============================================================================
@@ -21,7 +21,14 @@ const DEFAULTS: Required<Omit<GenesisConfig, 'compiler' | 'compilerFlags'>> = {
   startFrom: 1,
 };
 
-const SOLUTION_FALLBACKS = ['std.cpp', 'main.cpp', 'solution.cpp'];
+const SOLUTION_FALLBACKS = [
+  'std.cpp', 'main.cpp', 'solution.cpp',
+  'std.go', 'main.go',
+  'std.rs', 'main.rs',
+  'Main.java',
+  'std.py', 'main.py',
+  'std.js', 'main.js', 'index.js'
+];
 
 // =============================================================================
 // --- Core Implementation Class ---
@@ -98,10 +105,10 @@ class GenesisMaker {
       return;
     }
 
-    const executablePath = await getExecutable(sourceFile, this.config);
-    if (!executablePath) return;
+    const executionResult = await prepareForExecution(sourceFile, this.config);
+    if (!executionResult) return;
 
-    await this.runGenerationTasks(executablePath);
+    await this.runGenerationTasks(executionResult);
   }
 
   // ---------------------------------------------------------------------------
@@ -125,7 +132,7 @@ class GenesisMaker {
    * Executes all test case generation tasks in parallel.
    * @param executablePath The path to the compiled solution executable.
    */
-  private async runGenerationTasks(executablePath: string): Promise<void> {
+  private async runGenerationTasks(execResult: ExecutionResult): Promise<void> {
     const totalCases = this.caseQueue.length;
     if (totalCases === 0) {
       consola.info(t('maker.noCases'));
@@ -138,7 +145,7 @@ class GenesisMaker {
     const spinner = ora(t('maker.generatingCases', 0, totalCases)).start();
 
     const taskPool = this.caseQueue.map((caseItem, i) =>
-      () => this.generateSingleCase(caseItem, this.config.startFrom + i, executablePath)
+      () => this.generateSingleCase(caseItem, this.config.startFrom + i, execResult.runArgs)
     );
 
     for (let i = 0; i < totalCases; i += concurrencyLimit) {
@@ -189,10 +196,10 @@ class GenesisMaker {
    * Atomic operation to generate a single test case, including input generation, solution execution, and output saving.
    * @param caseItem The case object, containing the generator and label.
    * @param caseNumber The current case number.
-   * @param executablePath The path to the solution executable.
+   * @param runArgs The command and arguments to run the solution.
    * @returns {Promise<{ name: string; success: boolean; error?: string }>} The result of the operation.
    */
-  private async generateSingleCase(caseItem: Case, caseNumber: number, executablePath: string): Promise<{ name: string; success: boolean; error?: string }> {
+  private async generateSingleCase(caseItem: Case, caseNumber: number, runArgs: string[]): Promise<{ name: string; success: boolean; error?: string }> {
     const caseName = caseItem.label ? `(#${caseNumber}: ${caseItem.label})` : `(#${caseNumber})`;
     try {
       const rawInput = caseItem.generator();
@@ -201,7 +208,8 @@ class GenesisMaker {
       const inFile = path.join(this.config.outputDir, `${caseNumber}.in`);
       await fs.writeFile(inFile, formattedInput);
 
-      const { stdout } = await execa(executablePath, { input: formattedInput });
+      const [command, ...args] = runArgs;
+      const { stdout } = await execa(command, args, { input: formattedInput });
 
       const outFile = path.join(this.config.outputDir, `${caseNumber}.out`);
       await fs.writeFile(outFile, stdout);

@@ -5,7 +5,7 @@ import { execa, type ExecaError } from 'execa';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { type CheckerConfig, type CompareMode } from './types';
-import { getExecutable } from './compilation';
+import { prepareForExecution } from './execution';
 import { compareOutputs } from './differ';
 import { formatData } from './formatter';
 import { t } from './i18n';
@@ -92,18 +92,21 @@ export class GenesisChecker {
 
     const { std, target, ...compilerConfig } = this.config;
 
-    // --- Compilation ---
-    const stdPath = await getExecutable(std, compilerConfig);
-    if (!stdPath) {
+    // --- Preparation for Execution ---
+    const stdExec = await prepareForExecution(std, compilerConfig);
+    if (!stdExec) {
       consola.error(t('checker.compileStdFailed', std));
       return;
     }
 
-    const targetPath = await getExecutable(target, compilerConfig);
-    if (!targetPath) {
+    const targetExec = await prepareForExecution(target, compilerConfig);
+    if (!targetExec) {
       consola.error(t('checker.compileTargetFailed', target));
       return;
     }
+
+    const [stdCommand, ...stdArgs] = stdExec.runArgs;
+    const [targetCommand, ...targetArgs] = targetExec.runArgs;
 
     // --- Checking Loop ---
     const spinner = ora(t('checker.runningTests', 0, count)).start();
@@ -115,17 +118,16 @@ export class GenesisChecker {
 
       let stdOutput: string;
       try {
-        const { stdout } = await execa(stdPath, { input: formattedInput });
+        const { stdout } = await execa(stdCommand, stdArgs, { input: formattedInput });
         stdOutput = stdout;
       } catch (error) {
         spinner.fail(t('checker.stdCrashed', i));
-        // @ts-expect-error
         await this.reportFailure(i, 'RE_STD', formattedInput, (error as ExecaError).stderr || '', '');
         return;
       }
 
       try {
-        const { stdout: myOutput } = await execa(targetPath, {
+        const { stdout: myOutput } = await execa(targetCommand, targetArgs, {
           input: formattedInput,
           timeout: this.timeoutMs,
         });
@@ -145,7 +147,6 @@ export class GenesisChecker {
           await this.reportFailure(i, 'TLE', formattedInput, stdOutput, '[Time Limit Exceeded]');
         } else {
           spinner.fail(t('checker.runtimeError', i));
-          // @ts-expect-error
           await this.reportFailure(i, 'RE', formattedInput, stdOutput, execaError.stderr || '[No stderr]');
         }
         return;

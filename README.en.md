@@ -11,7 +11,8 @@
 *   **Built-in Checker**: Automatically runs the standard and target solutions, performs high-fidelity output comparison (Diff), and quickly pinpoints `WA`/`TLE`.
 *   **Powerful Data Generator (`G`)**: Comes with a rich set of convenient generation functions (`G.int`, `G.permutation`, `G.matrix`, `G.even`, `G.tree`, `G.graph`, etc.) that cover 99% of basic data needs.
 *   **Intelligent Formatting**: You only need to return structured data (e.g., `[[n, m], grid]`), and Genesis will automatically handle spaces and newlines to generate compliant `.in` files. **It correctly handles both numeric matrices and string arrays for `grid`!**
-*   **Automatic Compilation & Caching**: Auto-detects C++ compilers (`g++` / `clang++`) and compiles your standard and tested solutions. An intelligent caching mechanism based on file content and compilation parameters avoids redundant compilations, significantly boosting efficiency.
+*   **Multi-language Support**: Native support for **C++, Go, Rust, Java, Python, Node.js**, and more. Just provide the source file, and Genesis handles the compilation and execution automatically.
+*   **Automatic Compilation & Caching**: Auto-detects required compilers (`g++`, `go`, `rustc`, etc.) and compiles your standard and tested solutions. An intelligent caching mechanism based on file content and compilation parameters avoids redundant compilations, significantly boosting efficiency.
 *   **High Performance**: Leverages Node.js's asynchronous nature and multi-core CPUs, allowing `Maker` to generate all test cases in parallel and `Checker` to perform high-speed solution checking.
 *   **CLI Tool**: Provides convenient command-line tools for project initialization, data generation, solution checking, and cleanup operations.
 *   **Cross-Platform**: Works seamlessly on Windows (MSYS2/MinGW), macOS, and Linux.
@@ -23,8 +24,11 @@
 Genesis provides convenient command-line tools for the following operations:
 
 ```bash
-# Initialize a project (create template files)
+# Initialize a C++ project (default)
 genesis init
+
+# Initialize a Go project
+genesis init --lang go
 
 # Generate data
 genesis make
@@ -50,11 +54,11 @@ bun add genesis-kit --dev
 
 ### 2. Write Your First `make.ts`
 
-Assume your project structure is as follows:
+Let's use Go as an example. Assume your project structure is as follows:
 
 ```
 .
-├── std.cpp        # Your C++ standard solution
+├── std.go         # Your Go standard solution
 └── make.ts        # Your data generation script
 ```
 
@@ -64,7 +68,11 @@ Now, write `make.ts` to generate data for the A+B Problem:
 // make.ts
 import { Maker, G } from 'genesis-kit';
 
+// The data generation script syntax is identical, even with a Go solution.
 Maker
+  .configure({
+    solution: 'std.go' // Tell Maker which file is your standard solution
+  })
   // Case 1: Small numbers
   .case('Small Numbers', () => {
     const a = G.int(1, 100);
@@ -100,7 +108,7 @@ bun make.ts
 tsx make.ts
 ```
 
-**What just happened?** Genesis automatically found and compiled `std.cpp`, then executed the 7 `case`s in parallel, and finally saved the input (`.in`) and output (`.out`) files to the `data/` directory.
+**What just happened?** Genesis automatically identified `std.go` as a Go program, found and invoked the `go` compiler, executed the 7 `case`s in parallel, and finally saved the input (`.in`) and output (`.out`) files to the `data/` directory.
 
 ## 📚 API Reference
 
@@ -114,12 +122,12 @@ Genesis provides two core tools: `Maker` (for batch data generation) and `Checke
 
 #### Quick Start: `check.ts`
 
-Let's use `Checker` to catch a common `int` overflow error.
+Let's use `Checker` to diff-test a Python program.
 
 **Prepare the files:**
 
-1.  `std.cpp` (A+B, using `long long`, **correct**)
-2.  `my_buggy.cpp` (A+B, using `int`, **buggy**)
+1.  `std.py` (A+B, **correct**)
+2.  `my_buggy.py` (A+B, **buggy**, doesn't handle large numbers)
 
 **Write `check.ts`:**
 
@@ -130,8 +138,8 @@ import { Checker, G } from 'genesis-kit';
 Checker
   // 1. Configure
   .configure({
-    std: 'std.cpp',          // (Required) Standard solution, must be correct
-    target: 'my_buggy.cpp',  // (Required) The program you want to test
+    std: 'std.py',          // (Required) Standard solution, must be correct
+    target: 'my_buggy.py',  // (Required) The program you want to test
     
     // (Optional) Comparison mode
     // 'normalized' (default): Simulates OJ judging (ignores trailing spaces, blank lines)
@@ -150,7 +158,7 @@ Checker
   })
 
   // 3. (Optional) Set a timeout
-  .timeout(1000) // Applies only to the target, in milliseconds
+  .timeout(2000) // Applies only to the target, in milliseconds
 
   // 4. Run
   .run(10000); // Run 10,000 times, or stop at the first error
@@ -160,7 +168,7 @@ Checker
 
 When `.run(N)` is initiated, `Checker` will:
 
-1.  **Compile**: Automatically compile `std` and `target` (and reuse `Maker`'s cache).
+1.  **Prepare**: Automatically prepare `std` and `target` for execution. For compiled languages like C++, Go, or Rust, this includes compilation and caching.
 2.  **Loop**: Start a **serial** loop for a maximum of `N` iterations.
 3.  **Generate**: In **each** iteration, call the function in `.gen()` to produce a new set of data.
 4.  **Execute**: Run the `std` and `target` programs separately, feeding the generated data as `stdin`.
@@ -235,9 +243,9 @@ Use this at **any point** in the call chain (usually at the beginning) to config
 
 ```typescript
 Maker.configure({
-  solution: 'main.cpp',   // Specify the standard solution filename (default: 'std.cpp')
+  solution: 'main.go',    // Specify the standard solution filename
   outputDir: 'testdata',  // Specify the output directory (default: 'data')
-  compiler: 'g++-12',     // Manually specify the compiler (default: auto-detects g++ or clang++)
+  compiler: 'g++-12',     // Manually specify a compiler for compiled languages (default: auto-detect)
   startFrom: 1,           // Starting file number (default: 1)
 });
 ```

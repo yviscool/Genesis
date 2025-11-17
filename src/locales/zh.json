@@ -70,5 +70,6 @@
   "cli.init.nextSteps": "\n后续步骤：\n  1. (可选) 如果您不在 '{0}' 目录中，请 cd 到该目录。\n  2. 修改 'std.cpp' 为您的标程。\n  3. 修改 'make.ts' 来定义您的测试数据。\n  4. 运行 'genesis make' 来生成 .in/.out 文件。\n  5. 运行 'genesis check' 来对拍您的解法和标程。",
   "cli.init.failed": "项目初始化失败: {0}",
   "cli.runner.notFound": "在当前目录中未找到 '{0}'。",
-  "cli.runner.hint": "您是否忘记运行 'genesis init'？"
+  "cli.runner.hint": "您是否忘记运行 'genesis init'？",
+  "cli.index.langDescription": "语言模板 (cpp, go, rust, java, py, js)"
 }

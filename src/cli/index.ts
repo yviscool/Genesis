@@ -12,9 +12,10 @@ const cli = cac('genesis');
 
 cli
   .command('init [directory]', t('cli.index.initDescription'))
+  .option('--lang <language>', t('cli.index.langDescription'))
   .option('--force', t('cli.index.initForceDescription'))
-  .action((directory?: string, options?: { force?: boolean }) => {
-    handleInit(directory, options?.force);
+  .action((directory?: string, options?: { lang?: string, force?: boolean }) => {
+    handleInit(directory, options);
   });
 
 cli.command('make', t('cli.index.makeDescription')).action(() => {
