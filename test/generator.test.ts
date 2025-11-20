@@ -613,6 +613,91 @@ describe('G (Generator)', () => {
 
       expect(isBipartite).toBe(true);
     });
+
+    test('should throw error when edges exceed max for DAG', () => {
+        // Max edges for DAG n=10 is 45
+        expect(() => G.graph(10, 46, { type: 'dag', directed: true })).toThrow(/can have at most 45 edges/);
+    });
+
+    test('should handle bipartite max edges correctly', () => {
+        // n=10, max edges for bipartite (undirected) is 5*5=25
+        expect(() => G.graph(10, 26, { type: 'bipartite', directed: false })).toThrow(/can have at most 25 edges/);
+        // n=10, max edges for bipartite (directed) is 2*5*5=50
+        expect(() => G.graph(10, 51, { type: 'bipartite', directed: true })).toThrow(/can have at most 50 edges/);
+    });
+
+    test('should always succeed in generating bipartite graph if edges are within range (prevent random hang)', () => {
+        // Previous bug: partition could be 1 vs 9, max edges 9. Requesting 20 would hang.
+        // Now it should ensure partition is balanced enough.
+        const n = 10;
+        const m = 20;
+        // Try multiple times to ensure no flaky behavior
+        for(let i=0; i<10; i++) {
+            const graph = G.graph(n, m, { type: 'bipartite' });
+            expect(graph.length).toBe(m);
+        }
+    });
+
+    test('should generate connected bipartite graph', () => {
+        const n = 10;
+        const m = 15;
+        const graph = G.graph(n, m, { type: 'bipartite', connected: true, oneBased: false });
+        expect(graph.length).toBe(m);
+
+        // Verify connectivity
+        const adj = new Map<number, number[]>();
+        for(let i=0; i<n; i++) adj.set(i, []);
+        graph.forEach(([u, v]) => {
+            adj.get(u)?.push(v);
+            adj.get(v)?.push(u);
+        });
+
+        const visited = new Set<number>();
+        const q = [0];
+        visited.add(0);
+        while(q.length > 0) {
+            const u = q.shift()!;
+            adj.get(u)?.forEach(v => {
+                if(!visited.has(v)) {
+                    visited.add(v);
+                    q.push(v);
+                }
+            });
+        }
+        expect(visited.size).toBe(n);
+    });
+
+    test('should generate connected DAG', () => {
+        const n = 10;
+        const m = 15;
+        const graph = G.graph(n, m, { type: 'dag', connected: true, oneBased: false });
+        expect(graph.length).toBe(m);
+
+        // Verify connectivity (ignoring direction for connectivity check, or check weak connectivity)
+        // The implementation ensures u->v implies i < j in topological sort, but connectivity is undirected concept usually
+        // unless strongly connected (impossible for DAG). So we check weak connectivity.
+        const adj = new Map<number, number[]>();
+        for(let i=0; i<n; i++) adj.set(i, []);
+        graph.forEach(([u, v]) => {
+            adj.get(u)?.push(v);
+            adj.get(v)?.push(u);
+        });
+
+        const visited = new Set<number>();
+        const q = [0];
+        visited.add(0);
+        while(q.length > 0) {
+            const u = q.shift()!;
+            adj.get(u)?.forEach(v => {
+                if(!visited.has(v)) {
+                    visited.add(v);
+                    q.push(v);
+                }
+            });
+        }
+        expect(visited.size).toBe(n);
+    });
+
   });
 
   // G.debug is primarily for console logging, so direct testing of its output is complex and often brittle.
