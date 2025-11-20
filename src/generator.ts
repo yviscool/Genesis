@@ -480,9 +480,8 @@ export const G: IGenerator = {
       const points = [0, ...cuts, adjustedSum];
       const parts = [];
       for (let i = 0; i < count; i++) {
-        // Use non-null assertion to assure TypeScript that these elements exist
-        const start = points[i]!;     // Assert not null/undefined
-        const end = points[i + 1]!;   // Assert not null/undefined
+        const start = points[i]!;
+        const end = points[i + 1]!;
         parts.push(end - start + minVal);
       }
       return this.shuffle(parts);
@@ -563,7 +562,6 @@ export const G: IGenerator = {
       }
     } else { // random
       const nodes = this.permutation(n, false);
-      // A simple and effective way to generate a random tree (related to Prüfer sequences)
       for (let i = 1; i < n; i++) {
         const u = nodes[i];
         const v = nodes[this.int(0, i - 1)];
@@ -580,9 +578,7 @@ export const G: IGenerator = {
 
     if (oneBased) {
       result = result.map(edge => {
-        // Only increment node indices (first two elements), not weights
         const newEdge = [edge[0] + 1, edge[1] + 1];
-        // If there's a weight (third element), keep it unchanged
         if (edge.length > 2) {
           newEdge.push(edge[2]);
         }
@@ -596,24 +592,52 @@ export const G: IGenerator = {
   graph(n: number, m: number, options: GraphOptions = {}): number[][] {
     const {
       type = 'simple',
-      directed = false,
       weighted = false,
       connected = false,
       noSelfLoops = true,
       oneBased = true,
     } = options;
 
+    // type='dag' implies directed=true unless user forced directed=false (which is usually error but we check)
+    // We default 'directed' to false in general, but for DAG it should be true.
+    let { directed = false } = options;
+    if (type === 'dag' && options.directed === undefined) {
+        directed = true;
+    }
+
     // --- 1. Input Validation ---
     if (n <= 0) return [];
     if (type === 'tree') {
       if (m !== n - 1) throw new Error(`A tree with ${n} vertices must have ${n - 1} edges, but ${m} were requested.`);
+      return this.tree(n, { oneBased, weighted });
     }
+
+    // Check connectivity minimum edges
     if (connected && m < n - 1) {
       throw new Error(`A connected graph with ${n} vertices must have at least ${n - 1} edges.`);
     }
-    const maxEdges = noSelfLoops ? n * (n - 1) / 2 : n * (n + 1) / 2;
-    if (!directed && m > maxEdges) {
-      throw new Error(`An undirected simple graph with ${n} vertices can have at most ${maxEdges} edges.`);
+
+    // Check max edges
+    let maxEdges: number;
+    if (type === 'dag') {
+        // DAG max edges is n*(n-1)/2 (directed, no cycles -> no self loops, max is like undirected complete)
+        maxEdges = n * (n - 1) / 2;
+    } else if (type === 'bipartite') {
+        // Max edges is when partition is as equal as possible: floor(n/2) * ceil(n/2)
+        // If directed, edges can go both ways, so * 2.
+        const half = Math.floor(n / 2);
+        const other = n - half;
+        maxEdges = half * other * (directed ? 2 : 1);
+    } else { // simple
+        if (directed) {
+            maxEdges = noSelfLoops ? n * (n - 1) : n * n;
+        } else {
+            maxEdges = noSelfLoops ? n * (n - 1) / 2 : n * (n + 1) / 2;
+        }
+    }
+
+    if (m > maxEdges) {
+        throw new Error(`Graph with ${n} vertices of type '${type}' (directed: ${directed}) can have at most ${maxEdges} edges. Requested: ${m}.`);
     }
 
     // --- 2. Edge Generation ---
@@ -626,42 +650,93 @@ export const G: IGenerator = {
       return true;
     };
 
-    if (type === 'tree') {
-      return this.tree(n, { oneBased, weighted });
-    }
-
-    if (connected) {
-      // Start by generating a random tree to ensure connectivity
-      const treeEdges = this.tree(n, { type: 'random', oneBased: false });
-      treeEdges.forEach(([u, v]) => addEdge(u, v));
-    }
-
     if (type === 'dag') {
-      const nodes = this.permutation(n, false); // Defines a topological sort
-      while (edgeSet.size < m) {
-        const u_idx = this.int(0, n - 1);
-        const v_idx = this.int(0, n - 1);
-        if (u_idx === v_idx) continue;
-        const u = nodes[Math.min(u_idx, v_idx)];
-        const v = nodes[Math.max(u_idx, v_idx)];
-        addEdge(u, v); // Edge always goes from lower index to higher index in permutation
-      }
+        const nodes = this.permutation(n, false); // Topological sort
+
+        if (connected) {
+             // Ensure connectivity consistent with DAG (forward edges only)
+             for (let i = 1; i < n; i++) {
+                 const j = this.int(0, i - 1);
+                 const u = nodes[j];
+                 const v = nodes[i];
+                 addEdge(u, v);
+             }
+        }
+
+        while (edgeSet.size < m) {
+            const idx1 = this.int(0, n - 1);
+            const idx2 = this.int(0, n - 1);
+            if (idx1 === idx2) continue;
+            const u = nodes[Math.min(idx1, idx2)];
+            const v = nodes[Math.max(idx1, idx2)];
+            addEdge(u, v);
+        }
+
     } else if (type === 'bipartite') {
-      const nodes = this.permutation(n, false);
-      const partition_size = this.int(1, n - 1);
-      const setA = nodes.slice(0, partition_size);
-      const setB = nodes.slice(partition_size);
-      while (edgeSet.size < m) {
-        const u = this.sample(setA);
-        const v = this.sample(setB);
-        addEdge(u, v);
-      }
-    } else { // 'simple'
-      while (edgeSet.size < m) {
-        const u = this.int(0, n - 1);
-        const v = this.int(0, n - 1);
-        addEdge(u, v);
-      }
+        const nodes = this.permutation(n, false);
+
+        // Calculate valid partition range k (size of setA)
+        // Capacity = k * (n-k) * C >= m
+        const C = directed ? 2 : 1;
+        const disc = n * n - 4 * m / C;
+        // disc >= 0 is guaranteed by maxEdges check
+        const sqrtD = Math.sqrt(disc);
+        const minK = Math.ceil((n - sqrtD) / 2);
+        const maxK = Math.floor((n + sqrtD) / 2);
+
+        const validMin = Math.max(1, minK);
+        const validMax = Math.min(n - 1, maxK);
+
+        // This shouldn't happen if maxEdges check passed, but for safety:
+        if (validMin > validMax) {
+             throw new Error(`Cannot find a bipartite partition for ${n} vertices and ${m} edges.`);
+        }
+
+        const partition_size = this.int(validMin, validMax);
+        const setA = nodes.slice(0, partition_size);
+        const setB = nodes.slice(partition_size);
+
+        if (connected) {
+             // Ensure connectivity across partition
+             const connectedA = [setA[0]];
+             const connectedB = [setB[0]];
+             addEdge(setA[0], setB[0]);
+
+             const remaining = [];
+             for(let i=1; i<setA.length; i++) remaining.push(setA[i]);
+             for(let i=1; i<setB.length; i++) remaining.push(setB[i]);
+             this.shuffle(remaining);
+
+             for(const u of remaining) {
+                 if (setA.includes(u)) {
+                     const v = this.sample(connectedB);
+                     addEdge(u, v);
+                     connectedA.push(u);
+                 } else {
+                     const v = this.sample(connectedA);
+                     addEdge(u, v);
+                     connectedB.push(u);
+                 }
+             }
+        }
+
+        while (edgeSet.size < m) {
+            const u = this.sample(setA);
+            const v = this.sample(setB);
+            addEdge(u, v);
+        }
+
+    } else { // Simple
+        if (connected) {
+             const treeEdges = this.tree(n, { type: 'random', oneBased: false });
+             treeEdges.forEach(([u, v]) => addEdge(u, v));
+        }
+
+        while (edgeSet.size < m) {
+            const u = this.int(0, n - 1);
+            const v = this.int(0, n - 1);
+            addEdge(u, v);
+        }
     }
 
     // --- 3. Post-processing ---
@@ -726,8 +801,6 @@ export const G: IGenerator = {
 
     if (type === 'random') {
         const pointSet = new Set<string>();
-        // To avoid infinite loops when generating many points in a small range, we ensure points are unique
-        // and only attempt to generate up to the maximum possible number of points in the coordinate range.
         const maxPossiblePoints = (maxVal - minVal + 1) ** 2;
         const targetCount = Math.min(n, maxPossiblePoints);
 
@@ -744,43 +817,36 @@ export const G: IGenerator = {
         
         let dx: number, dy: number, x0: number, y0: number;
 
-        // Try up to 50 times to find a line segment that can fit n points, to prevent infinite loops.
         for (let attempt = 0; attempt < 50; attempt++) {
-            // Generate a random, non-zero direction vector
             do {
                 dx = this.int(-10, 10);
                 dy = this.int(-10, 10);
             } while (dx === 0 && dy === 0);
 
-            // Based on the direction vector (dx, dy) and number of points n, calculate the safe range for the starting point (x0, y0)
             const x0_min = dx >= 0 ? minVal : minVal - (n - 1) * dx;
             const x0_max = dx >= 0 ? maxVal - (n - 1) * dx : maxVal;
 
             const y0_min = dy >= 0 ? minVal : minVal - (n - 1) * dy;
             const y0_max = dy >= 0 ? maxVal - (n - 1) * dy : maxVal;
 
-            // If the safe range is valid, generate the point set and return
             if (x0_min <= x0_max && y0_min <= y0_max) {
                 x0 = this.int(x0_min, x0_max);
                 y0 = this.int(y0_min, y0_max);
                 
                 const points = Array.from({ length: n }, (_, i) => [x0 + i * dx, y0 + i * dy]);
-                return this.shuffle(points); // Shuffle to avoid regularity
+                return this.shuffle(points);
             }
         }
 
-        // If it still fails after multiple attempts (e.g., n is too large or the range is too small), warn and fall back to random points.
         console.warn(`Could not generate collinear points for n=${n} in range [${minVal}, ${maxVal}]. Falling back to random points.`);
         return this.points(n, minVal, maxVal, { type: 'random' });
     }
     
-    // Theoretically unreachable
     return [];
   },
 
   base: {
     convert(input: string | number | bigint, fromRadix: number, toRadix: number): string {
-      // 1. Strictly validate radix range
       if (fromRadix < 2 || fromRadix > 36 || toRadix < 2 || toRadix > 36) {
         throw new Error(`Radix must be an integer between 2 and 36. Received: from=${fromRadix}, to=${toRadix}`);
       }
@@ -788,7 +854,6 @@ export const G: IGenerator = {
       const inputStr = String(input);
       let valueAsBigInt: bigint;
 
-      // 2. Any radix -> BigInt (as an intermediate state), and validate input legality
       try {
         if (fromRadix === 10) {
           valueAsBigInt = BigInt(inputStr);
@@ -797,9 +862,8 @@ export const G: IGenerator = {
           const fromBase = BigInt(fromRadix);
           for (const char of inputStr.toUpperCase()) {
             const digit = G.CHARSET.BASE36.indexOf(char);
-            // 3. Strictly validate each digit
             if (digit === -1 || digit >= fromRadix) {
-              throw new Error(); // Throw error to be handled by the unified catch block
+              throw new Error();
             }
             valueAsBigInt = valueAsBigInt * fromBase + BigInt(digit);
           }
@@ -808,7 +872,6 @@ export const G: IGenerator = {
         throw new Error(`Input "${inputStr}" contains invalid characters for base ${fromRadix}.`);
       }
 
-      // 4. BigInt -> Target radix
       if (valueAsBigInt === BigInt(0)) return '0';
       
       let result = '';
@@ -837,7 +900,6 @@ export const G: IGenerator = {
       }
       
       const charset = G.CHARSET.BASE36.slice(0, radix);
-      // 5. Strictly ensure no leading zeros
       if (length === 1) return G.sample(charset.split(''));
 
       const firstChar = G.sample(charset.replace('0', '').split(''));
@@ -848,10 +910,9 @@ export const G: IGenerator = {
   },
 
   debug<T>(labelOrData: string | T, dataOrOptions?: T | DebugOptions, options?: DebugOptions): void {
-    // --- 1. Argument parsing and config merging ---
     let label: string | null = null;
     let data: T;
-    let config: Required<Omit<DebugOptions, 'colors'>>; // We no longer manage colors manually
+    let config: Required<Omit<DebugOptions, 'colors'>>;
 
     const defaults: Required<Omit<DebugOptions, 'colors'>> = {
       separator: ' ',
@@ -870,17 +931,14 @@ export const G: IGenerator = {
       config = { ...defaults, ...(dataOrOptions as DebugOptions) };
     }
     
-    // --- 2. Core printing logic ---
     console.log(pc.bold(pc.cyan(`---[ ${label || 'Genesis Debug'} ]`)) + pc.gray(' ---'));
 
-    // a. Handle Null / Undefined
     if (data === null || data === undefined) {
       console.log(pc.magenta(String(data)));
       console.log(pc.gray('------------------------------------'));
       return;
     }
 
-    // b. Handle non-arrays (primitive types)
     if (!Array.isArray(data)) {
       if (config.printType) {
         console.log(`${pc.yellow('Type:')} ${pc.green(typeof data)}`);
@@ -890,7 +948,6 @@ export const G: IGenerator = {
       return;
     }
 
-    // c. Handle arrays
     if (data.length === 0) {
       console.log(pc.yellow('Type:') + pc.green(' Array (empty)'));
       console.log('[]');
@@ -902,7 +959,6 @@ export const G: IGenerator = {
     const isTruncated = data.length > config.truncate;
     const displayData = isTruncated ? data.slice(0, config.truncate) : data;
 
-    // --- Print metadata ---
     if (config.printType) {
         const itemType = is2D ? typeof (data[0] as any[])?.[0] : typeof data[0];
         const typeStr = is2D ? `Matrix<${itemType}>` : `Array<${itemType}>`;
@@ -910,7 +966,6 @@ export const G: IGenerator = {
         console.log(`${pc.yellow('Type:')} ${pc.green(typeStr)}  ${pc.yellow('Dims:')} ${pc.green(dimsStr)}`);
     }
 
-    // --- Print statistics (if applicable) ---
     if (config.printStats && typeof data[0] === 'number') {
         const flatNums = (is2D ? (data as number[][]).flat() : data as number[]).filter(n => typeof n === 'number');
         if(flatNums.length > 0) {
@@ -923,19 +978,18 @@ export const G: IGenerator = {
         }
     }
 
-    // --- Print data body ---
     if (config.printDims) {
         const dims = is2D ? `${data.length}${config.separator}${(data[0] as any[]).length}` : `${data.length}`;
         console.log(pc.magenta(dims));
     }
 
-    if (is2D) { // 2D Matrix, with alignment
+    if (is2D) {
       const matrix = displayData as any[][];
       const colWidths = Array(matrix[0]?.length || 0).fill(0);
       
       for (const row of matrix) {
         for (let i = 0; i < row.length; i++) {
-          const cellStr = String(row[i] ?? ''); // Handle null/undefined cells
+          const cellStr = String(row[i] ?? '');
           if (cellStr.length > colWidths[i]) {
             colWidths[i] = cellStr.length;
           }
@@ -948,7 +1002,7 @@ export const G: IGenerator = {
           .join(config.separator);
         console.log(rowStr);
       });
-    } else { // 1D Array
+    } else {
       console.log(displayData.join(config.separator));
     }
     
@@ -959,5 +1013,3 @@ export const G: IGenerator = {
     console.log(pc.gray('------------------------------------'));
   }
 };
-
-
