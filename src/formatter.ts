@@ -1,64 +1,38 @@
 // src/formatter.ts
 
 /**
- * Formats a single item into a single-line string.
- * - If the item is an array (e.g., [3, 5]), it joins all elements with a space, becoming "3 5".
- * - Otherwise (e.g., a number 5), it converts it directly to a string "5".
- * @param item - Any data item.
- * @returns {string} - A string representing a single line.
- */
-function formatLine(item: any): string {
-  if (Array.isArray(item)) {
-    return item.join(' ');
-  }
-  return String(item);
-}
-
-/**
- * (Final version) Intelligently formats any structured data returned by a generator
- * into the input string required for competitive programming problems.
+ * 格式化任意数据为字符串。
+ * 用于将生成器产生的复杂对象（数组、矩阵等）转换为可用于输入的文本格式。
  *
- * @param data Any structured data, such as numbers, strings, or their nested arrays.
- * @returns {string} The formatted string that can be written to an .in file.
+ * @param data - 要格式化的原始数据。
+ * @returns {string} - 格式化后的字符串。
  */
 export function formatData(data: any): string {
-  if (data === undefined || data === null) {
+  if (data === null || data === undefined) {
     return '';
   }
 
-  // If the top level is not an array, format it directly as a single line.
-  if (!Array.isArray(data)) {
-    return formatLine(data);
+  // 1. 数组处理
+  if (Array.isArray(data)) {
+    // 1.1 二维数组 (矩阵)
+    if (data.length > 0 && Array.isArray(data[0])) {
+      return data.map(row => (row as any[]).join(' ')).join('\n');
+    }
+    // 1.2 一维数组
+    return data.join(' ');
   }
 
-  const lines: string[] = [];
-  for (const item of data) {
-    // --- Core Smart-Decision Logic ---
-    // This if/else if/else structure ensures we can distinguish three core cases:
-    // 1. A matrix (2D array)
-    // 2. An array of strings (pre-formatted lines)
-    // 3. All other cases (should be treated as a single line)
-
-    // Case 1: If an element is a [2D array] (matrix), e.g., [[1,0], [0,1]]
-    if (Array.isArray(item) && item.length > 0 && Array.isArray(item[0])) {
-      // Iterate over each row of this matrix...
-      for (const row of item) {
-        // ...format each row into a single-line string and add it to the final result.
-        lines.push(formatLine(row));
-      }
+  // 2. 对象处理 (尝试转换为 JSON 或 toString)
+  if (typeof data === 'object') {
+    // 简单的对象通常不是合法的算法题输入，但在某些特殊情况下可能需要。
+    // 这里我们简单地调用 toString，除非它就是 [object Object]
+    const str = data.toString();
+    if (str === '[object Object]') {
+        return JSON.stringify(data);
     }
-    // Case 2: If an element is a [1D array of strings], e.g., ['...', '...']
-    // This means the user has already prepared each line for us.
-    else if (Array.isArray(item) && item.length > 0 && typeof item[0] === 'string') {
-      // Directly expand these strings as separate lines.
-      lines.push(...item);
-    }
-    // Case 3: All other cases, including [n, m], a single number, or an empty array.
-    // These should all be treated as [single-line] content.
-    else {
-      lines.push(formatLine(item));
-    }
+    return str;
   }
 
-  return lines.join('\n');
+  // 3. 基础类型 (number, string, boolean 等)
+  return String(data);
 }

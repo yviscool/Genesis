@@ -12,7 +12,7 @@ import { detectLanguage, type LanguageInfo } from './language';
 import { t } from './i18n';
 
 // =============================================================================
-// --- Constants & Type Definitions ---
+// --- 常量 & 类型定义 ---
 // =============================================================================
 
 const TEMP_DIR = '.genesis';
@@ -27,18 +27,18 @@ interface CacheMetadata {
 
 export interface ExecutionResult {
   runArgs: string[];
-  executablePath: string; // For compiled languages, the path to the binary; for interpreted, the source path.
+  executablePath: string; // 对于编译型语言，这是二进制文件的路径；对于解释型语言，这是源文件路径。
 }
 
 // =============================================================================
-// --- Main Execution Orchestrator ---
+// --- 主执行协调器 ---
 // =============================================================================
 
 /**
- * (Coordinator) Prepares a source file for execution.
- * For compiled languages, this involves caching and recompilation.
- * For interpreted languages, it identifies the correct runtime.
- * @returns {Promise<ExecutionResult | null>} An object with the command and arguments to run, or null on failure.
+ * (协调器) 准备待执行的源文件。
+ * 对于编译型语言，这涉及缓存检查和重新编译。
+ * 对于解释型语言，它负责识别正确的运行时环境。
+ * @returns {Promise<ExecutionResult | null>} 包含运行命令和参数的对象，如果失败则返回 null。
  */
 export async function prepareForExecution(
   sourceFile: string,
@@ -58,7 +58,7 @@ export async function prepareForExecution(
 }
 
 // =============================================================================
-// --- Interpreted Language Logic ---
+// --- 解释型语言逻辑 ---
 // =============================================================================
 
 async function handleInterpretedLanguage(sourceFile: string, lang: LanguageInfo): Promise<ExecutionResult | null> {
@@ -90,7 +90,7 @@ async function handleInterpretedLanguage(sourceFile: string, lang: LanguageInfo)
 }
 
 // =============================================================================
-// --- Compiled Language Logic ---
+// --- 编译型语言逻辑 ---
 // =============================================================================
 
 async function handleCompiledLanguage(
@@ -126,7 +126,7 @@ async function handleCompiledLanguage(
 
 function getRunCommand(executablePath: string, sourceFile: string, lang: LanguageInfo): string[] {
   if (lang.id === 'java') {
-    const dir = path.dirname(executablePath); // The .class file is in the cache dir
+    const dir = path.dirname(executablePath); // .class 文件在缓存目录中
     const className = path.basename(sourceFile, '.java');
     return ['java', '-cp', dir, className];
   }
@@ -134,7 +134,7 @@ function getRunCommand(executablePath: string, sourceFile: string, lang: Languag
 }
 
 // =============================================================================
-// --- Compiler & Profile Helpers ---
+// --- 编译器 & 配置文件辅助函数 ---
 // =============================================================================
 
 async function resolveCompiler(lang: LanguageInfo, userCompiler?: string): Promise<string | null> {
@@ -172,7 +172,7 @@ async function getCompilationProfile(
 }
 
 // =============================================================================
-// --- Compilation & Caching ---
+// --- 编译 & 缓存 ---
 // =============================================================================
 
 async function findCachedExecutable(cacheKey: string, currentHash: string): Promise<string | null> {
@@ -180,7 +180,7 @@ async function findCachedExecutable(cacheKey: string, currentHash: string): Prom
   const entry = cache[cacheKey];
   if (entry && entry.hash === currentHash) {
     try {
-      // For Java, the executable path is the directory containing the .class file.
+      // 对于 Java，executablePath 是包含 .class 文件的目录
       await fs.access(entry.executablePath);
       return entry.executablePath;
     } catch {
@@ -204,12 +204,12 @@ async function executeCompilation(
     const hashSuffix = profile.hash.substring(0, 8);
 
     if (lang.id === 'java') {
-      // For Java, compile into the cache directory, but don't rename the class file.
+      // 对于 Java，编译到缓存目录，但不重命名 class 文件
       const outputDir = path.join(TEMP_DIR, `${baseName}-${hashSuffix}`);
       return {
         command: compiler,
         args: [...profile.flags, '-d', outputDir, sourceFile],
-        executablePath: outputDir, // The "executable" is the directory.
+        executablePath: outputDir, // "可执行文件" 是目录
       };
     }
 
@@ -226,7 +226,7 @@ async function executeCompilation(
 
   const { command, args, executablePath } = getCommand();
   try {
-    // For Java, we need to ensure the output directory exists before compiling
+    // Java 需要在编译前确保输出目录存在
     if (lang.id === 'java') {
       await fs.mkdir(executablePath, { recursive: true });
     }
@@ -257,27 +257,27 @@ async function updateCache(cacheKey: string, hash: string, executablePath: strin
 }
 
 // =============================================================================
-// --- System Runtime Utilities ---
+// --- 系统运行时工具 ---
 // =============================================================================
 
 async function findRuntime(commands: readonly string[]): Promise<string | null> {
   for (const cmd of commands) {
     try {
-      // Special handling for 'go' command
+      // 对 'go' 命令的特殊处理
       if (cmd === 'go') {
-        await execaCommand('go version'); // 'go' expects 'version' as a subcommand
+        await execaCommand('go version'); // 'go' 需要 'version' 子命令
       } else {
-        // For other commands, try '--version' first, then '-v'
+        // 对于其他命令，先尝试 '--version'，然后 '-v'
         try {
           await execaCommand(`${cmd} --version`);
         } catch {
-          await execaCommand(`${cmd} -v`); // Fallback to -v
+          await execaCommand(`${cmd} -v`); // 回退到 -v
         }
       }
       return cmd;
     } catch (error) {
-      // console.error(`Failed to run version check for '${cmd}':`, error); // Keep this for debugging if needed
-      // Continue to next command if this one fails
+      // console.error(`Failed to run version check for '${cmd}':`, error); // 调试用
+      // 如果失败则尝试下一个命令
     }
   }
   return null;

@@ -3,7 +3,7 @@
 import { GenesisMaker } from './maker';
 import { GenesisChecker } from './checker';
 
-// --- Maker Exports ---
+// --- Maker 导出 ---
 
 const makerHandler: ProxyHandler<any> = {
   get(target, prop) {
@@ -23,7 +23,7 @@ export function createMaker(): GenesisMaker {
 }
 
 
-// --- Checker Exports ---
+// --- Checker 导出 ---
 
 const checkerHandler: ProxyHandler<any> = {
   get(target, prop) {
@@ -43,7 +43,7 @@ export function createChecker(): GenesisChecker {
 }
 
 
-// --- Other Exports ---
+// --- 其他导出 ---
 
 export { G } from './generator';
 export type { GenesisConfig, CheckerConfig, CompareMode } from './types';

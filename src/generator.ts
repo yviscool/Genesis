@@ -4,12 +4,12 @@ import pc from 'picocolors';
 import { shuffle as esShuffle, sampleSize as esSampleSize, chunk as esChunk } from 'es-toolkit';
 
 /**
- * Defines the full interface for the Genesis data generator (G).
- * This is the exposed API "blueprint", containing type signatures and detailed English documentation for all functions.
+ * 定义 Genesis 数据生成器 (G) 的完整接口。
+ * 这是对外暴露的 API "蓝图"，包含所有函数的类型签名和详细的中文文档。
  */
 interface IGenerator {
   /**
-   * Commonly used predefined character sets for string generation.
+   * 常用的预定义字符集，用于字符串生成。
    * @example
    * G.CHARSET.LOWERCASE // 'abcdefghijklmnopqrstuvwxyz'
    * G.CHARSET.ALPHANUMERIC // 'abcdef...XYZ012...9'
@@ -20,81 +20,81 @@ interface IGenerator {
     readonly DIGITS: string;
     readonly ALPHANUMERIC: string;
     readonly ALPHA: string;
-    /** The full character set for representing up to base-36. */
+    /** 用于表示最高 36 进制的完整字符集。 */
     readonly BASE36: string;
   };
 
   /**
-   * Generates a random integer within a [min, max] range (inclusive).
-   * @param min The minimum value.
-   * @param max The maximum value.
-   * @returns A random integer.
+   * 生成一个 [min, max] 范围内的随机整数 (包含边界)。
+   * @param min 最小值。
+   * @param max 最大值。
+   * @returns 一个随机整数。
    * @example G.int(1, 10) // => 7
    */
   int(min: number, max: number): number;
 
   /**
-   * Generates an array of n random integers.
-   * @param count The number of elements in the array.
-   * @param min The minimum value for each integer.
-   * @param max The maximum value for each integer.
-   * @returns An array of random integers.
+   * 生成包含 n 个随机整数的数组。
+   * @param count 数组元素个数。
+   * @param min 每个整数的最小值。
+   * @param max 每个整数的最大值。
+   * @returns 一个随机整数数组。
    * @example G.ints(5, 1, 100) // => [42, 88, 19, 7, 63]
    */
   ints(count: number, min: number, max: number): number[];
 
   /**
-   * Generates an array of n distinct random integers within a [min, max] range.
-   * @param count The number of distinct integers to generate.
-   * @param min The minimum value for the integers.
-   * @param max The maximum value for the integers.
-   * @returns An array of distinct random integers.
+   * 生成包含 n 个互不相同的随机整数的数组 (在 [min, max] 范围内)。
+   * @param count 要生成的不同整数的个数。
+   * @param min 整数的最小值。
+   * @param max 整数的最大值。
+   * @returns 一个包含不重复随机整数的数组。
    * @example G.distinctInts(5, 1, 10) // => [8, 2, 10, 5, 1]
    */
   distinctInts(count: number, min: number, max: number): number[];
 
   /**
-   * Generates a random floating-point number within a [min, max] range.
-   * @param min The minimum value.
-   * @param max The maximum value.
-   * @param precision The number of decimal places (default: 2).
-   * @returns A random float.
+   * 生成一个 [min, max] 范围内的随机浮点数。
+   * @param min 最小值。
+   * @param max 最大值。
+   * @param precision 小数位精度 (默认: 2)。
+   * @returns 一个随机浮点数。
    * @example G.float(1, 2, 4) // => 1.5821
    */
   float(min: number, max: number, precision?: number): number;
 
   /**
-   * Generates a random even number within a [min, max] range.
-   * @param min The minimum value.
-   * @param max The maximum value.
-   * @returns A random even number.
+   * 生成一个 [min, max] 范围内的随机偶数。
+   * @param min 最小值。
+   * @param max 最大值。
+   * @returns 一个随机偶数。
    * @example G.even(1, 100) // => 52
    */
   even(min: number, max: number): number;
 
   /**
-   * Generates a random odd number within a [min, max] range.
-   * @param min The minimum value.
-   * @param max The maximum value.
-   * @returns A random odd number.
+   * 生成一个 [min, max] 范围内的随机奇数。
+   * @param min 最小值。
+   * @param max 最大值。
+   * @returns 一个随机奇数。
    * @example G.odd(1, 100) // => 87
    */
   odd(min: number, max: number): number;
 
   /**
-   * Generates a random string of a specified length.
-   * @param len The length of the string.
-   * @param charset The character set to use (default: G.CHARSET.ALPHANUMERIC).
-   * @returns A random string.
+   * 生成指定长度的随机字符串。
+   * @param len 字符串长度。
+   * @param charset 使用的字符集 (默认: G.CHARSET.ALPHANUMERIC)。
+   * @returns 一个随机字符串。
    * @example G.string(10, G.CHARSET.DIGITS) // => "4815162342"
    */
   string(len: number, charset?: string): string;
 
   /**
-   * [New] Generates a random palindrome of a specified length.
-   * @param len The length of the palindrome.
-   * @param charset The character set to use (default: lowercase letters).
-   * @returns A palindrome string.
+   * [新增] 生成指定长度的随机回文字符串。
+   * @param len 回文串长度。
+   * @param charset 使用的字符集 (默认: 小写字母)。
+   * @returns 一个回文字符串。
    * @example
    * G.palindrome(5) // => "level"
    * G.palindrome(6, '01') // => "100001"
@@ -102,271 +102,271 @@ interface IGenerator {
   palindrome(len: number, charset?: string): string;
 
   /**
-   * Generates a random word (composed of lowercase letters).
-   * @param minLen The minimum length.
-   * @param maxLen The maximum length.
-   * @returns A random word.
+   * 生成一个随机单词 (由小写字母组成)。
+   * @param minLen 最小长度。
+   * @param maxLen 最大长度。
+   * @returns 一个随机单词。
    * @example G.word(5, 8) // => "wxyzk"
    */
   word(minLen: number, maxLen: number): string;
 
   /**
-   * Generates an array of n random words.
-   * @param count The number of words.
-   * @param minLen The minimum length of each word.
-   * @param maxLen The maximum length of each word.
-   * @returns An array of random words.
+   * 生成包含 n 个随机单词的数组。
+   * @param count 单词个数。
+   * @param minLen 每个单词的最小长度。
+   * @param maxLen 每个单词的最大长度。
+   * @returns 一个随机单词数组。
    * @example G.words(3, 4, 6) // => ["pfvj", "sxwoa", "bhuql"]
    */
   words(count: number, minLen: number, maxLen: number): string[];
 
   /**
-   * The most powerful primitive generator, creates an array.
-   * @param count The number of elements in the array.
-   * @param itemGenerator A generator for each element, receiving the index `i` as an argument.
-   * @returns An array generated according to the rule.
+   * 最强大的基础生成函数，用于根据规则构建数组。
+   * @param count 数组元素个数。
+   * @param itemGenerator 每个元素的生成器函数，接收当前索引 `i` 作为参数。
+   * @returns 根据规则生成的数组。
    * @example G.array(5, (i) => `${i}!`) // => ["0!", "1!", "2!", "3!", "4!"]
    */
   array<T>(count: number, itemGenerator: (index: number) => T): T[];
 
   /**
-   * [New] Generates a sorted sequence, designed for problems involving binary search, two pointers, etc.
-   * @param count The number of elements.
-   * @param min The minimum value.
-   * @param max The maximum value.
-   * @param options Configuration options.
-   * @returns A sorted array of numbers.
+   * [新增] 生成有序序列，专为二分查找、双指针等题目设计。
+   * @param count 元素个数。
+   * @param min 最小值。
+   * @param max 最大值。
+   * @param options 配置选项。
+   * @returns 一个有序数字数组。
    * @example
-   * G.sorted(5, 1, 100) // default non-decreasing
-   * G.sorted(5, 1, 20, { order: 'strictlyAsc' }) // strictly increasing
+   * G.sorted(5, 1, 100) // 默认非降序
+   * G.sorted(5, 1, 20, { order: 'strictlyAsc' }) // 严格递增
    */
   sorted(count: number, min: number, max: number, options?: { order?: 'asc' | 'desc' | 'strictlyAsc' | 'strictlyDesc' }): number[];
 
   /**
-   * [New] Generates a sparse sequence, ensuring the absolute difference between adjacent elements is at least `gap`.
-   * @param count The number of elements.
-   * @param min The minimum value.
-   * @param max The maximum value.
-   * @param gap The minimum gap.
-   * @returns A sparse array of numbers (in random order).
+   * [新增] 生成稀疏序列，保证相邻元素绝对差值至少为 `gap`。
+   * @param count 元素个数。
+   * @param min 最小值。
+   * @param max 最大值。
+   * @param gap 最小间隔。
+   * @returns 一个稀疏数字数组 (顺序随机)。
    * @example G.sparse(10, 1, 100, 5) // e.g. [5, 20, 11, ...]
    */
   sparse(count: number, min: number, max: number, gap: number): number[];
 
   /**
-   * [New] Generates a sequence of positive integers that sum to S, designed for knapsack or partition problems.
-   * @param count The number of positive integers in the sequence.
-   * @param sum The target sum.
-   * @param options Configuration options.
-   * @returns An array of numbers summing to `sum` (in random order).
-   * @example G.partition(5, 100, { minVal: 10 }) // 5 numbers sum to 100, each >= 10
+   * [新增] 生成和为 S 的正整数序列，专为背包或划分问题设计。
+   * @param count 序列中正整数的个数。
+   * @param sum 目标和。
+   * @param options 配置选项。
+   * @returns 一个和为 `sum` 的数组 (顺序随机)。
+   * @example G.partition(5, 100, { minVal: 10 }) // 5 个数和为 100，且每个数 >= 10
    */
   partition(count: number, sum: number, options?: { minVal?: number }): number[];
 
   /**
-   * Generates a numeric matrix (2D array).
-   * @param rows The number of rows.
-   * @param cols The number of columns.
-   * @param cellGenerator A generator for each cell.
-   * @returns A matrix generated according to the rule.
+   * 生成数字矩阵 (二维数组)。
+   * @param rows 行数。
+   * @param cols 列数。
+   * @param cellGenerator 每个单元格的生成器函数。
+   * @returns 根据规则生成的矩阵。
    * @example G.matrix(2, 3, () => G.int(0, 9))
    */
   matrix<T>(rows: number, cols: number, cellGenerator: (rowIndex: number, colIndex: number) => T): T[][];
 
   /**
-   * [New] Generates a 0-1 matrix.
-   * @param rows The number of rows.
-   * @param cols The number of columns.
-   * @param density The density of 1s (between 0 and 1, default 0.5).
-   * @returns A matrix containing only 0s and 1s.
-   * @example G.grid01(10, 10, 0.3) // 10x10, ~30% of 1s
+   * [新增] 生成 0-1 矩阵。
+   * @param rows 行数。
+   * @param cols 列数。
+   * @param density 1 的密度 (0 到 1 之间，默认为 0.5)。
+   * @returns 一个只包含 0 和 1 的矩阵。
+   * @example G.grid01(10, 10, 0.3) // 10x10, 约 30% 是 1
    */
   grid01(rows: number, cols: number, density?: number): number[][];
 
   /**
-   * [New] Generates a random maze that is guaranteed to be fully connected.
-   * @param rows The number of rows.
-   * @param cols The number of columns.
-   * @param options Configuration options.
-   * @returns A maze matrix composed of wall and road characters.
+   * [新增] 生成保证完全连通的随机迷宫。
+   * @param rows 行数。
+   * @param cols 列数。
+   * @param options 配置选项。
+   * @returns 由墙壁和道路字符组成的迷宫矩阵。
    * @example G.maze(11, 11, { wall: '#', road: '.' })
    */
   maze(rows: number, cols: number, options?: { wall?: string, road?: string }): string[][];
 
   /**
-   * 🌳 Generates a tree with n vertices.
-   * This is a convenience wrapper around `G.graph(n, n - 1, { connected: true, ... })`.
-   * @param n The number of vertices.
-   * @param options Configuration options for the tree.
-   * @returns An edge list representing the tree.
+   * 🌳 生成包含 n 个顶点的树。
+   * 这是一个便捷包装器，等价于 `G.graph(n, n - 1, { connected: true, ... })`。
+   * @param n 顶点数。
+   * @param options 树的配置选项。
+   * @returns 表示树的边列表。
    * @example
-   * G.tree(10) // A random tree with 10 vertices
-   * G.tree(5, { type: 'path' }) // A path graph: 1-2-3-4-5
+   * G.tree(10) // 一个 10 个顶点的随机树
+   * G.tree(5, { type: 'path' }) // 一条链: 1-2-3-4-5
    */
   tree(n: number, options?: TreeOptions): number[][];
 
   /**
-   * 🕸️ Generates a graph with n vertices and m edges.
-   * The most powerful graph generation tool.
-   * @param n The number of vertices.
-   * @param m The number of edges.
-   * @param options Configuration options for the graph.
-   * @returns An edge list representing the graph, e.g., `[[u, v, w], ...]`.
+   * 🕸️ 生成包含 n 个顶点 m 条边的图。
+   * 最强大的图生成工具。
+   * @param n 顶点数。
+   * @param m 边数。
+   * @param options 图的配置选项。
+   * @returns 表示图的边列表，例如 `[[u, v, w], ...]`。
    * @example
-   * // A simple undirected, connected graph with 10 vertices and 12 edges
+   * // 一个包含 10 个顶点 12 条边的简单无向连通图
    * G.graph(10, 12, { connected: true })
-   * // A directed, weighted DAG
+   * // 一个带权的有向无环图 (DAG)
    * G.graph(10, 15, { type: 'dag', directed: true, weighted: [1, 100] })
    */
   graph(n: number, m: number, options?: GraphOptions): number[][];
 
   /**
-   * Generates a permutation from 1 to n (or 0 to n-1).
-   * @param n The number of elements.
-   * @param oneBased Whether to start from 1 (default: true).
-   * @returns A random permutation.
+   * 生成 1 到 n (或 0 到 n-1) 的全排列。
+   * @param n 元素个数。
+   * @param oneBased 是否从 1 开始 (默认: true)。
+   * @returns 一个随机排列。
    * @example G.permutation(5) // => [3, 1, 5, 2, 4]
    */
   permutation(n: number, oneBased?: boolean): number[];
 
   /**
-   * Shuffles the elements of an array randomly (returns a new array, does not modify the original).
-   * @param array The array to shuffle.
-   * @returns A new array with the order of elements shuffled.
+   * 随机打乱数组元素 (返回新数组，不修改原数组)。
+   * @param array 待打乱的数组。
+   * @returns 元素顺序被打乱的新数组。
    * @example G.shuffle([1, 2, 3]) // => [2, 3, 1]
    */
   shuffle<T>(array: readonly T[]): T[];
 
   /**
-   * Splits an array into chunks of a specified size.
-   * @param array The source array.
-   * @param size The size of each chunk.
-   * @returns A 2D array.
+   * 将数组按指定大小分块。
+   * @param array 源数组。
+   * @param size 每个块的大小。
+   * @returns 一个二维数组。
    * @example G.chunk([1, 2, 3, 4, 5], 2) // => [[1, 2], [3, 4], [5]]
    */
   chunk<T>(array: readonly T[], size: number): T[][];
 
   /**
-   * Checks if a year is a leap year.
-   * @param year The year.
-   * @returns True if it is a leap year.
+   * 判断是否为闰年。
+   * @param year 年份。
+   * @returns 如果是闰年则返回 true。
    * @example G.isLeap(2000) // => true
    */
   isLeap(year: number): boolean;
 
   /**
-   * Generates a random year within a specified range.
-   * @param minYear The minimum year (default: 1970).
-   * @param maxYear The maximum year (default: current year).
-   * @returns A random year.
+   * 生成指定范围内的随机年份。
+   * @param minYear 最小年份 (默认: 1970)。
+   * @param maxYear 最大年份 (默认: 当前年份)。
+   * @returns 一个随机年份。
    * @example G.year(2000, 2010) // => 2005
    */
   year(minYear?: number, maxYear?: number): number;
 
   /**
-   * Generates a random date string within a specified range.
-   * @param options Configuration options.
-   * @returns A formatted random date string.
+   * 生成指定范围内的随机日期字符串。
+   * @param options 配置选项。
+   * @returns 格式化后的随机日期字符串。
    * @example G.date({ format: 'YYYY/MM/DD' }) // => "2023/07/15"
    */
   date(options?: { minYear?: number; maxYear?: number; format?: string }): string;
 
   /**
-   * (Usage 1) Samples a random element from an array.
-   * @param population The source array.
-   * @returns A random element.
+   * (用法 1) 从数组中随机抽取一个元素。
+   * @param population 源数组。
+   * @returns 一个随机元素。
    * @example G.sample(['a', 'b', 'c']) // => 'b'
    */
   sample<T>(population: readonly T[]): T;
   /**
-   * (Usage 2) Samples k distinct elements from an array.
-   * @param population The source array.
-   * @param k The number of elements to sample.
-   * @returns An array of k distinct elements.
+   * (用法 2) 从数组中随机抽取 k 个不重复元素。
+   * @param population 源数组。
+   * @param k 抽取的元素个数。
+   * @returns 包含 k 个不重复元素的数组。
    * @example G.sample(['a', 'b', 'c'], 2) // => ['c', 'a']
    */
   sample<T>(population: readonly T[], k: number): T[];
 
   /**
-   * 🗺️ Generates n 2D points on a plane.
-   * @param n The number of points.
-   * @param minVal The minimum coordinate value.
-   * @param maxVal The maximum coordinate value.
-   * @param options Configuration options for generating special distributions of points.
-   * @returns A list of point coordinates, e.g., [[x1, y1], [x2, y2], ...].
+   * 🗺️ 在平面上生成 n 个二维点坐标。
+   * @param n 点的个数。
+   * @param minVal 坐标最小值。
+   * @param maxVal 坐标最大值。
+   * @param options 用于生成特殊分布点的配置选项。
+   * @returns 点坐标列表, 例如 [[x1, y1], [x2, y2], ...]。
    * @example
-   * G.points(10, -100, 100) // 10 random points
-   * G.points(10, -100, 100, { type: 'collinear' }) // 10 collinear points
+   * G.points(10, -100, 100) // 10 个随机点
+   * G.points(10, -100, 100, { type: 'collinear' }) // 10 个共线点
    */
   points(n: number, minVal: number, maxVal: number, options?: {
     type?: 'random' | 'collinear'
   }): number[][];
 
   /**
-   * 🌀 [Internal] Radix conversion and encoding toolset.
-   * Provides generic, atomic radix conversion capabilities.
+   * 🌀 [内部] 进制转换与编码工具集。
+   * 提供通用、原子的进制转换能力。
    */
   readonly base: {
     /**
-     * [Core] Generic radix conversion function, supports large numbers and includes strict validation.
-     * @param input The number to convert (handles number, bigint, string automatically).
-     * @param fromRadix The original radix (2-36).
-     * @param toRadix The target radix (2-36).
-     * @returns The converted number as an uppercase string.
+     * [核心] 通用进制转换函数，支持大数并包含严格验证。
+     * @param input 待转换的数字 (自动处理 number, bigint, string)。
+     * @param fromRadix 原进制 (2-36)。
+     * @param toRadix 目标进制 (2-36)。
+     * @returns 转换后的大写字符串。
      * @example G.base.convert('1010', 2, 10) // => '10'
      */
     convert(input: string | number | bigint, fromRadix: number, toRadix: number): string;
 
     /**
-     * [Alias] Converts a binary string to hexadecimal. Most common in competitive programming.
-     * @param binString A valid binary string.
-     * @returns The converted uppercase hexadecimal string.
+     * [别名] 将二进制字符串转换为十六进制。在算法竞赛中很常见。
+     * @param binString 有效的二进制字符串。
+     * @returns 转换后的大写十六进制字符串。
      * @example G.base.binToHex('111100001010') // => 'F0A'
      */
     binToHex(binString: string): string;
 
     /**
-     * [Alias] Converts a hexadecimal string to binary. Most common in competitive programming.
-     * @param hexString A valid hexadecimal string.
-     * @returns The converted binary string.
+     * [别名] 将十六进制字符串转换为二进制。在算法竞赛中很常见。
+     * @param hexString 有效的十六进制字符串。
+     * @returns 转换后的二进制字符串。
      * @example G.base.hexToBin('F0A') // => '111100001010'
      */
     hexToBin(hexString: string): string;
     
     /**
-     * Generates a random number string of a specified length and radix.
-     * Strictly adheres to the "no extra leading zeros" convention.
-     * @param length The number of digits/length of the number.
-     * @param radix The base (2-36).
-     * @returns A random uppercase number string in the specified radix.
+     * 生成指定长度和进制的随机数字符串。
+     * 严格遵守 "无多余前导零" 的约定。
+     * @param length 数字的位数/长度。
+     * @param radix 进制 (2-36)。
+     * @returns 指定进制的大写随机数字符串。
      * @example
-     * G.base.digits(100, 2)  // Generates a 100-digit binary number
-     * G.base.digits(30, 16)  // Generates a 30-digit hexadecimal number
+     * G.base.digits(100, 2)  // 生成一个 100 位的二进制数
+     * G.base.digits(30, 16)  // 生成一个 30 位的十六进制数
      */
     digits(length: number, radix: number): string;
 
   };
 
   /**
-   * [Ultimate] A deep debug printing tool that can analyze and elegantly format any generated data.
-   * Supports function overloading, can be passed data or "label + data".
-   * @param data The data to inspect.
-   * @param options Formatting options.
+   * [终极] 深度调试打印工具，能够分析并优雅地展示任何生成的数据。
+   * 支持函数重载，可以直接传数据，也可以传 "标签 + 数据"。
+   * @param data 要检查的数据。
+   * @param options 格式化选项。
    */
   debug<T>(data: T, options?: DebugOptions): void;
   /**
-   * [Ultimate] A deep debug printing tool that can analyze and elegantly format any generated data.
-   * Supports function overloading, can be passed data or "label + data".
-   * @param label A descriptive label for the data.
-   * @param data The data to inspect.
-   * @param options Formatting options.
+   * [终极] 深度调试打印工具，能够分析并优雅地展示任何生成的数据。
+   * 支持函数重载，可以直接传数据，也可以传 "标签 + 数据"。
+   * @param label 数据的描述性标签。
+   * @param data 要检查的数据。
+   * @param options 格式化选项。
    */
   debug<T>(label: string, data: T, options?: DebugOptions): void;
 
 }
 
 /**
- * The concrete implementation of the G object.
+ * G 对象的具体实现。
  */
 export const G: IGenerator = {
   CHARSET: {
@@ -503,10 +503,10 @@ export const G: IGenerator = {
     const visited = Array.from({ length: rows }, () => Array(cols).fill(false));
     const stack: [number, number][] = [];
 
-    // Start from a valid road position
+    // 从一个合法的道路位置开始
     const startR = 1;
     const startC = 1;
-    if (startR >= rows || startC >= cols) return grid; // Maze too small
+    if (startR >= rows || startC >= cols) return grid; // 迷宫太小
 
     grid[startR][startC] = road;
     visited[startR][startC] = true;
@@ -516,7 +516,7 @@ export const G: IGenerator = {
         const [r, c] = stack.pop()!;
         const neighbors: [number, number, number, number][] = []; // [nextR, nextC, wallR, wallC]
         
-        // Check neighbors at distance 2
+        // 检查距离为 2 的邻居
         const dirs = [[-2, 0], [2, 0], [0, -2], [0, 2]];
         this.shuffle(dirs);
 
@@ -598,33 +598,33 @@ export const G: IGenerator = {
       oneBased = true,
     } = options;
 
-    // type='dag' implies directed=true unless user forced directed=false (which is usually error but we check)
-    // We default 'directed' to false in general, but for DAG it should be true.
+    // type='dag' 隐含 directed=true，除非用户强制设为 false (通常是错误用法，但我们做检查)
+    // 通常默认 'directed' 为 false，但 DAG 默认为 true。
     let { directed = false } = options;
     if (type === 'dag' && options.directed === undefined) {
         directed = true;
     }
 
-    // --- 1. Input Validation ---
+    // --- 1. 输入验证 ---
     if (n <= 0) return [];
     if (type === 'tree') {
       if (m !== n - 1) throw new Error(`A tree with ${n} vertices must have ${n - 1} edges, but ${m} were requested.`);
       return this.tree(n, { oneBased, weighted });
     }
 
-    // Check connectivity minimum edges
+    // 检查连通图的最小边数
     if (connected && m < n - 1) {
       throw new Error(`A connected graph with ${n} vertices must have at least ${n - 1} edges.`);
     }
 
-    // Check max edges
+    // 检查最大边数
     let maxEdges: number;
     if (type === 'dag') {
-        // DAG max edges is n*(n-1)/2 (directed, no cycles -> no self loops, max is like undirected complete)
+        // DAG 最大边数是 n*(n-1)/2 (有向，无环 -> 无自环，最大就像无向完全图)
         maxEdges = n * (n - 1) / 2;
     } else if (type === 'bipartite') {
-        // Max edges is when partition is as equal as possible: floor(n/2) * ceil(n/2)
-        // If directed, edges can go both ways, so * 2.
+        // 当两部分划分尽可能相等时边数最大: floor(n/2) * ceil(n/2)
+        // 如果是有向图，边可以双向，所以 * 2。
         const half = Math.floor(n / 2);
         const other = n - half;
         maxEdges = half * other * (directed ? 2 : 1);
@@ -640,7 +640,7 @@ export const G: IGenerator = {
         throw new Error(`Graph with ${n} vertices of type '${type}' (directed: ${directed}) can have at most ${maxEdges} edges. Requested: ${m}.`);
     }
 
-    // --- 2. Edge Generation ---
+    // --- 2. 边生成 ---
     const edgeSet = new Set<string>();
     const addEdge = (u: number, v: number) => {
       if (noSelfLoops && u === v) return false;
@@ -651,10 +651,10 @@ export const G: IGenerator = {
     };
 
     if (type === 'dag') {
-        const nodes = this.permutation(n, false); // Topological sort
+        const nodes = this.permutation(n, false); // 拓扑排序
 
         if (connected) {
-             // Ensure connectivity consistent with DAG (forward edges only)
+             // 保证连通性，且符合 DAG 性质 (只连向后的边)
              for (let i = 1; i < n; i++) {
                  const j = this.int(0, i - 1);
                  const u = nodes[j];
@@ -675,11 +675,11 @@ export const G: IGenerator = {
     } else if (type === 'bipartite') {
         const nodes = this.permutation(n, false);
 
-        // Calculate valid partition range k (size of setA)
-        // Capacity = k * (n-k) * C >= m
+        // 计算合法的划分范围 k (setA 的大小)
+        // 容量 = k * (n-k) * C >= m
         const C = directed ? 2 : 1;
         const disc = n * n - 4 * m / C;
-        // disc >= 0 is guaranteed by maxEdges check
+        // maxEdges 检查保证了 disc >= 0
         const sqrtD = Math.sqrt(disc);
         const minK = Math.ceil((n - sqrtD) / 2);
         const maxK = Math.floor((n + sqrtD) / 2);
@@ -687,7 +687,7 @@ export const G: IGenerator = {
         const validMin = Math.max(1, minK);
         const validMax = Math.min(n - 1, maxK);
 
-        // This shouldn't happen if maxEdges check passed, but for safety:
+        // 如果通过了 maxEdges 检查，这种情况不应发生，但为了安全起见：
         if (validMin > validMax) {
              throw new Error(`Cannot find a bipartite partition for ${n} vertices and ${m} edges.`);
         }
@@ -697,7 +697,7 @@ export const G: IGenerator = {
         const setB = nodes.slice(partition_size);
 
         if (connected) {
-             // Ensure connectivity across partition
+             // 保证跨划分的连通性
              const connectedA = [setA[0]];
              const connectedB = [setB[0]];
              addEdge(setA[0], setB[0]);
@@ -726,7 +726,7 @@ export const G: IGenerator = {
             addEdge(u, v);
         }
 
-    } else { // Simple
+    } else { // Simple (普通图)
         if (connected) {
              const treeEdges = this.tree(n, { type: 'random', oneBased: false });
              treeEdges.forEach(([u, v]) => addEdge(u, v));
@@ -739,7 +739,7 @@ export const G: IGenerator = {
         }
     }
 
-    // --- 3. Post-processing ---
+    // --- 3. 后处理 ---
     let result = Array.from(edgeSet).map(key => key.split(',').map(Number));
 
     if (weighted) {
