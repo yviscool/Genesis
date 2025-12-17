@@ -1,178 +1,181 @@
 // src/types.ts
 
 /**
- * The core configuration object for Genesis.
- * Users pass this object to `Maker.configure()` to customize generation behavior.
+ * Genesis 的核心配置对象。
+ * 用户通过 `Maker.configure()` 传入此对象，以此来定制数据生成器的行为。
  */
 export interface GenesisConfig {
   /**
-   * The path to the solution source file (e.g., 'std.cpp', 'main.go').
-   * If not specified, Genesis will search for common default filenames.
+   * 标程（标准解答）的源文件路径 (例如 'std.cpp', 'main.go')。
+   * 如果未指定，Genesis 会自动搜索常见的默认文件名。
    */
   solution?: string;
 
   /**
-   * The output directory for the generated test data.
+   * 生成的测试数据的输出目录。
    * @default 'data'
    */
   outputDir?: string;
 
   /**
-   * The starting number for test case files.
+   * 测试用例文件的起始编号。
    * @default 1
    */
   startFrom?: number;
 
   /**
-   * Specifies the compiler command to use for compiled languages.
-   * If not specified, Genesis automatically detects the appropriate compiler 
-   * (e.g., 'g++', 'clang++', 'go', 'rustc', 'javac').
+   * 用于编译型语言的编译器命令。
+   * 如果未指定，Genesis 会自动根据文件后缀检测合适的编译器
+   * (例如 'g++', 'clang++', 'go', 'rustc', 'javac')。
    * @example 'g++-12'
    */
   compiler?: string;
 
   /**
-   * Extra flags to pass to the compiler for compiled languages.
-   * These are appended to the default flags for the detected language.
+   * 传递给编译器的额外参数/标志。
+   * 这些参数会被追加到对应语言的默认编译命令之后。
    * @example ['-std=c++20']
    */
   compilerFlags?: string[];
 }
 
 /**
- * Describes the internal structure of a test case to be generated.
+ * 描述待生成的单个测试点的内部结构。
  */
 export interface Case {
   /**
-   * The generator function that returns structured data.
+   * 返回结构化数据的生成器函数。
    */
   generator: () => any;
   /**
-   * An optional label for the test case, used in logging.
+   * 测试点的可选标签，用于日志输出，方便识别。
    */
   label?: string;
 }
 
+/**
+ * 调试输出的配置选项。
+ */
 export interface DebugOptions {
   /**
-   * The separator between array elements.
+   * 数组/矩阵元素之间的分隔符。
    * @default ' '
    */
   separator?: string;
   /**
-   * Whether to print the dimensions before an array/matrix (e.g., "5", "10 5").
+   * 是否在打印数组/矩阵内容前先打印其维度信息 (例如 "5", "10 5")。
    * @default false
    */
   printDims?: boolean;
   /**
-   * Whether to print the inferred data type.
+   * 是否打印推断出的数据类型信息。
    * @default true
    */
   printType?: boolean;
   /**
-   * For numeric arrays/matrices, whether to print statistics (min, max, sum).
+   * 对于数值型数组/矩阵，是否打印统计信息 (最小值, 最大值, 和)。
    * @default false
    */
   printStats?: boolean;
   /**
-   * For large arrays, the maximum number of rows/elements to display. Others are shown as '...'.
+   * 对于大型数组，指定最多显示多少行/个元素。超出的部分将显示为 '...'。
    * @default 50
    */
   truncate?: number;
 }
 
 /**
- * The type of graph to generate.
- * - `simple`: A standard graph allowing cycles and multiple components.
- * - `tree`: A connected acyclic graph.
- * - `dag`: A directed acyclic graph.
- * - `bipartite`: A graph whose vertices can be divided into two disjoint sets.
+ * 要生成的图的类型。
+ * - `simple`: 普通图（允许存在环和不连通分量）。
+ * - `tree`: 树（连通无环图）。
+ * - `dag`: 有向无环图 (DAG)。
+ * - `bipartite`: 二分图（顶点可被划分为两个互不相交的集合）。
  */
 export type GraphType = 'simple' | 'tree' | 'dag' | 'bipartite';
 
 /**
- * Configuration options for `G.graph`.
+ * `G.graph` 的配置选项。
  */
 export interface GraphOptions {
-  /** The type of graph to generate. @default 'simple' */
+  /** 图的类型。 @default 'simple' */
   type?: GraphType;
-  /** Whether the graph is directed. @default false */
+  /** 是否为有向图。 @default false */
   directed?: boolean;
   /** 
-   * Whether edges are weighted. 
-   * - `true`: weights from 1 to 1,000,000,000.
-   * - `[min, max]`: weights in the specified range.
+   * 边是否带权。
+   * - `true`: 随机生成 1 到 1,000,000,000 之间的权重。
+   * - `[min, max]`: 在指定范围内生成权重。
    * @default false
    */
   weighted?: boolean | [number, number];
-  /** Whether to ensure the graph is connected. @default false */
+  /** 是否保证图是连通的。 @default false */
   connected?: boolean;
-  /** Whether to prevent self-loops (e.g., u-u). @default true */
+  /** 是否禁止自环 (例如 u-u 的边)。 @default true */
   noSelfLoops?: boolean;
-  /** Whether vertex numbering is 1-based. @default true */
+  /** 顶点编号是否从 1 开始。 @default true */
   oneBased?: boolean;
 }
 
 /**
- * The type of tree to generate.
- * - `random`: A random tree structure.
- * - `path`: A tree where vertices form a single chain.
- * - `star`: A tree with a central vertex connected to all others.
+ * 要生成的树的类型。
+ * - `random`: 随机树结构。
+ * - `path`: 链（路径图），顶点连成一条线。
+ * - `star`: 菊花图（星形图），一个中心点连接所有其他点。
  */
 export type TreeType = 'random' | 'path' | 'star';
 
 /**
- * Configuration options for `G.tree`.
+ * `G.tree` 的配置选项。
  */
 export interface TreeOptions {
-  /** The type of tree structure to generate. @default 'random' */
+  /** 树的结构类型。 @default 'random' */
   type?: TreeType;
   /** 
-   * Whether edges are weighted. 
-   * - `true`: weights from 1 to 1,000,000,000.
-   * - `[min, max]`: weights in the specified range.
+   * 边是否带权。
+   * - `true`: 随机生成 1 到 1,000,000,000 之间的权重。
+   * - `[min, max]`: 在指定范围内生成权重。
    * @default false
    */
   weighted?: boolean | [number, number];
-  /** Whether vertex numbering is 1-based. @default true */
+  /** 顶点编号是否从 1 开始。 @default true */
   oneBased?: boolean;
 }
 
 /**
- * The comparison mode for the checker.
- * - `normalized`: Ignores trailing whitespace and blank lines (simulates `diff -bB`).
- * - `exact`: Performs a strict, character-by-character comparison.
+ * 对拍器 (Checker) 的比对模式。
+ * - `normalized`: 标准化比对，忽略行末空格和文末空行（模拟 `diff -bB`）。
+ * - `exact`: 严格比对，逐字符完全一致。
  */
 export type CompareMode = 'normalized' | 'exact';
 
 /**
- * The core configuration object for the Checker.
+ * Checker (对拍器) 的核心配置对象。
  */
 export interface CheckerConfig {
   /**
-   * The path to the source file of the standard (correct) solution.
+   * 标程（正确解法）的源文件路径。
    */
   std: string;
 
   /**
-   * The path to the source file of the program to be tested.
+   * 待测程序（用户代码）的源文件路径。
    */
   target: string;
 
   /**
-   * Specifies the compiler command to use for compiled languages.
-   * If not specified, Genesis automatically detects the appropriate compiler.
+   * 用于编译型语言的编译器命令。
+   * 如果未指定，Genesis 会自动检测合适的编译器。
    * @example 'g++-12'
    */
   compiler?: GenesisConfig['compiler'];
 
   /**
-   * Extra flags to pass to the compiler for compiled languages.
+   * 传递给编译器的额外参数/标志。
    */
   compilerFlags?: GenesisConfig['compilerFlags'];
 
   /**
-   * The comparison mode.
+   * 比对模式。
    * @default 'normalized'
    */
   compareMode?: CompareMode;

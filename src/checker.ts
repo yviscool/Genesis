@@ -11,7 +11,7 @@ import { formatData } from './formatter';
 import { t } from './i18n';
 
 // =============================================================================
-// --- Constants & Defaults ---
+// --- 常量 & 默认值 ---
 // =============================================================================
 
 const DEFAULTS: Required<Omit<CheckerConfig, 'std' | 'target' | 'compiler' | 'compilerFlags'>> = {
@@ -25,27 +25,27 @@ const FAIL_ARTIFACTS = {
 };
 
 // =============================================================================
-// --- Core Implementation Class ---
+// --- 核心实现类 ---
 // =============================================================================
 
 export class GenesisChecker {
   private config: CheckerConfig & { compareMode: CompareMode };
   private generator: (() => any) | null = null;
-  private timeoutMs: number = 5000; // Default timeout: 5s
+  private timeoutMs: number = 5000; // 默认超时时间: 5s
 
   constructor() {
-    // @ts-expect-error - The `std` and `target` are required and will be set by `configure`.
+    // @ts-expect-error - std 和 target 是必需的，将在 configure 中设置
     this.config = { ...DEFAULTS };
   }
 
   // ---------------------------------------------------------------------------
-  // --- Public API ---
+  // --- 公共 API ---
   // ---------------------------------------------------------------------------
 
   /**
-   * Configures the checker instance.
-   * @param userConfig The user-provided configuration object.
-   * @returns {this} The instance for chaining.
+   * 配置 Checker 实例。
+   * @param userConfig 用户提供的配置对象。
+   * @returns {this} 返回实例自身以支持链式调用。
    */
   public configure(userConfig: CheckerConfig): this {
     if (!userConfig.std || !userConfig.target) {
@@ -57,9 +57,9 @@ export class GenesisChecker {
   }
 
   /**
-   * Sets the generator function for producing test data.
-   * @param generator The generator function.
-   * @returns {this} The instance for chaining.
+   * 设置用于生成测试数据的生成器函数。
+   * @param generator 生成器函数。
+   * @returns {this} 返回实例自身以支持链式调用。
    */
   public gen(generator: () => any): this {
     this.generator = generator;
@@ -67,9 +67,9 @@ export class GenesisChecker {
   }
 
   /**
-   * Sets the timeout for the target program's execution.
-   * @param ms Timeout in milliseconds.
-   * @returns {this} The instance for chaining.
+   * 设置目标程序的执行超时时间。
+   * @param ms 超时时间（毫秒）。
+   * @returns {this} 返回实例自身以支持链式调用。
    */
   public timeout(ms: number): this {
     if (ms > 0) {
@@ -79,8 +79,8 @@ export class GenesisChecker {
   }
 
   /**
-   * Starts the checking process.
-   * @param count The number of test cases to run.
+   * 启动对拍流程。
+   * @param count 要运行的测试用例数量。
    */
   public async run(count: number = 100): Promise<void> {
     consola.start(t('checker.starting'));
@@ -92,7 +92,7 @@ export class GenesisChecker {
 
     const { std, target, ...compilerConfig } = this.config;
 
-    // --- Preparation for Execution ---
+    // --- 准备执行环境 ---
     const stdExec = await prepareForExecution(std, compilerConfig);
     if (!stdExec) {
       consola.error(t('checker.compileStdFailed', std));
@@ -108,7 +108,7 @@ export class GenesisChecker {
     const [stdCommand, ...stdArgs] = stdExec.runArgs;
     const [targetCommand, ...targetArgs] = targetExec.runArgs;
 
-    // --- Checking Loop ---
+    // --- 对拍循环 ---
     const spinner = ora(t('checker.runningTests', 0, count)).start();
     for (let i = 1; i <= count; i++) {
       spinner.text = t('checker.runningTests', i, count);
@@ -157,16 +157,16 @@ export class GenesisChecker {
   }
 
   // ---------------------------------------------------------------------------
-  // --- Helper Methods ---
+  // --- 辅助方法 ---
   // ---------------------------------------------------------------------------
 
   /**
-   * Reports a failure and saves the artifacts.
-   * @param testNumber The number of the failed test case.
-   * @param type The type of failure (WA, RE, TLE, RE_STD).
-   * @param input The input that caused the failure.
-   * @param stdOut The standard output.
-   * @param myOut The output or error from the target program.
+   * 报告错误并保存相关文件 (Artifacts)。
+   * @param testNumber 失败的测试用例编号。
+   * @param type 错误类型 (WA, RE, TLE, RE_STD)。
+   * @param input 导致失败的输入数据。
+   * @param stdOut 标程的输出。
+   * @param myOut 目标程序的输出或错误信息。
    */
   private async reportFailure(testNumber: number, type: string, input: string, stdOut: string, myOut: string): Promise<void> {
     let typeMessage = '';

@@ -12,7 +12,7 @@ import { prepareForExecution, type ExecutionResult } from './execution';
 import { t } from './i18n';
 
 // =============================================================================
-// --- Constants & Defaults ---
+// --- 常量 & 默认值 ---
 // =============================================================================
 
 const DEFAULTS: Required<Omit<GenesisConfig, 'compiler' | 'compilerFlags'>> = {
@@ -31,7 +31,7 @@ const SOLUTION_FALLBACKS = [
 ];
 
 // =============================================================================
-// --- Core Implementation Class ---
+// --- 核心实现类 ---
 // =============================================================================
 
 class GenesisMaker {
@@ -43,13 +43,13 @@ class GenesisMaker {
   }
 
   // ---------------------------------------------------------------------------
-  // --- Public API ---
+  // --- 公共 API ---
   // ---------------------------------------------------------------------------
 
   /**
-   * Configures the generator instance.
-   * @param userConfig The user-provided configuration object.
-   * @returns {this} The instance for chaining.
+   * 配置生成器实例。
+   * @param userConfig 用户提供的配置对象。
+   * @returns {this} 返回实例自身以支持链式调用。
    */
   public configure(userConfig: GenesisConfig): this {
     this.config = { ...this.config, ...userConfig };
@@ -57,10 +57,10 @@ class GenesisMaker {
   }
 
   /**
-   * Adds a test case to the generation queue.
-   * @param labelOrGenerator The label for the test case (optional) or the generator function.
-   * @param generator The generator function for the test case.
-   * @returns {this} The instance for chaining.
+   * 向生成队列中添加一个测试点。
+   * @param labelOrGenerator 测试点的标签（可选）或生成器函数。
+   * @param generator 测试点的生成器函数。
+   * @returns {this} 返回实例自身以支持链式调用。
    */
   public case(label: string, generator: () => any): this;
   public case(generator: () => any): this;
@@ -75,10 +75,10 @@ class GenesisMaker {
   }
 
   /**
-   * Adds multiple anonymous, similar test cases in batch.
-   * @param count The number of test cases to add.
-   * @param generator The generator function to use for all test cases.
-   * @returns {this} The instance for chaining.
+   * 批量添加多个匿名的、相似的测试点。
+   * @param count 要添加的测试点数量。
+   * @param generator 用于所有测试点的生成器函数。
+   * @returns {this} 返回实例自身以支持链式调用。
    */
   public cases(count: number, generator: () => any): this {
     for (let i = 0; i < count; i++) {
@@ -88,8 +88,8 @@ class GenesisMaker {
   }
 
   /**
-   * Starts the entire test data generation process.
-   * This is the entry point for all operations, coordinating preprocessing, compilation, and parallel generation tasks.
+   * 启动整个测试数据生成流程。
+   * 这是所有操作的入口点，负责协调预处理、编译和并行生成任务。
    */
   public async generate(): Promise<void> {
     consola.start(t('maker.starting'));
@@ -112,12 +112,12 @@ class GenesisMaker {
   }
 
   // ---------------------------------------------------------------------------
-  // --- Core Flow Orchestrators ---
+  // --- 核心流程调度器 ---
   // ---------------------------------------------------------------------------
 
   /**
-   * Prepares the generation environment, including cleaning the output directory.
-   * @returns {Promise<boolean>} True if the environment is ready, false otherwise.
+   * 准备生成环境，包括清理输出目录。
+   * @returns {Promise<boolean>} 如果环境准备就绪则返回 true，否则返回 false。
    */
   private async prepareEnvironment(): Promise<boolean> {
     const cleanupOk = await this.cleanupOutputDirectory();
@@ -129,8 +129,8 @@ class GenesisMaker {
   }
 
   /**
-   * Executes all test case generation tasks in parallel.
-   * @param executablePath The path to the compiled solution executable.
+   * 并行执行所有测试点生成任务。
+   * @param executablePath 编译后的标程可执行文件路径。
    */
   private async runGenerationTasks(execResult: ExecutionResult): Promise<void> {
     const totalCases = this.caseQueue.length;
@@ -164,8 +164,8 @@ class GenesisMaker {
   }
 
   /**
-   * Summarizes and reports the generation results.
-   * @param results An array of generation results for all test cases.
+   * 汇总并报告生成结果。
+   * @param results 所有测试点的生成结果数组。
    */
   private reportResults(results: { name: string; success: boolean; error?: string }[]): void {
     const totalCases = results.length;
@@ -189,15 +189,15 @@ class GenesisMaker {
   }
 
   // ---------------------------------------------------------------------------
-  // --- Filesystem & Utilities ---
+  // --- 文件系统 & 工具函数 ---
   // ---------------------------------------------------------------------------
 
   /**
-   * Atomic operation to generate a single test case, including input generation, solution execution, and output saving.
-   * @param caseItem The case object, containing the generator and label.
-   * @param caseNumber The current case number.
-   * @param runArgs The command and arguments to run the solution.
-   * @returns {Promise<{ name: string; success: boolean; error?: string }>} The result of the operation.
+   * 原子操作：生成单个测试点，包括生成输入数据、运行标程、保存输出数据。
+   * @param caseItem 测试点对象，包含生成器和标签。
+   * @param caseNumber 当前测试点编号。
+   * @param runArgs 运行标程的命令和参数。
+   * @returns {Promise<{ name: string; success: boolean; error?: string }>} 操作结果。
    */
   private async generateSingleCase(caseItem: Case, caseNumber: number, runArgs: string[]): Promise<{ name: string; success: boolean; error?: string }> {
     const caseName = caseItem.label ? `(#${caseNumber}: ${caseItem.label})` : `(#${caseNumber})`;
@@ -222,8 +222,8 @@ class GenesisMaker {
   }
 
   /**
-   * Automatically finds the solution source file in a specific order.
-   * @returns {Promise<string | null>} The path to the found file, or null.
+   * 按特定顺序自动查找标程源文件。
+   * @returns {Promise<string | null>} 找到的文件路径，未找到则返回 null。
    */
   private async findSolutionFile(): Promise<string | null> {
     const filesToTry = this.config.solution === DEFAULTS.solution
@@ -240,8 +240,8 @@ class GenesisMaker {
   }
 
   /**
-   * Cleans the entire output directory, with strict safety checks to prevent accidental deletion.
-   * @returns {Promise<boolean>} True on successful cleanup, false on failure due to safety checks or errors.
+   * 清理整个输出目录，包含严格的安全检查以防止误删。
+   * @returns {Promise<boolean>} 清理成功返回 true，因安全检查或错误导致失败返回 false。
    */
   private async cleanupOutputDirectory(): Promise<boolean> {
     const dir = this.config.outputDir;
@@ -278,22 +278,22 @@ class GenesisMaker {
 }
 
 // =============================================================================
-// --- Unified Entrypoint Proxy ---
+// --- 统一入口代理 (Proxy) ---
 // =============================================================================
 
 const handler: ProxyHandler<any> = {
   /**
-   * The `get` trap of the Proxy, implementing an "implicit factory" pattern.
+   * Proxy 的 `get` 拦截器，实现了 "隐式工厂" 模式。
    *
-   * 1. When any property of `Maker` is accessed (e.g., `Maker.configure`), this function is triggered.
-   * 2. It **immediately creates a new `GenesisMaker` instance**.
-   * 3. It then gets the method of the same name from that instance (e.g., `instance.configure`) and returns it.
-   * 4. Key point: Since methods like `configure` return `this` (the newly created `instance`),
-   *    subsequent chained calls (e.g., `.case(...)`) are made on that `instance`,
-   *    and **will not** trigger the Proxy's `get` trap again.
+   * 1. 当访问 `Maker` 的任何属性 (例如 `Maker.configure`) 时，此函数被触发。
+   * 2. 它会**立即创建一个新的 `GenesisMaker` 实例**。
+   * 3. 然后从该实例获取同名方法 (例如 `instance.configure`) 并返回。
+   * 4. 关键点：由于 `configure` 等方法返回 `this` (即新创建的 `instance`)，
+   *    后续的链式调用 (例如 `.case(...)`) 将在该 `instance` 上进行，
+   *    **不会**再次触发 Proxy 的 `get` 拦截器。
    *
-   * This pattern allows for a clean API call (`Maker.case(...)`) while ensuring that each call chain
-   * starts with a clean, isolated instance.
+   * 这种模式允许使用简洁的 API 调用 (`Maker.case(...)`)，同时确保每次调用链都
+   * 始于一个干净、独立的实例。
    */
   get(target, prop) {
     const instance = new GenesisMaker();
@@ -306,13 +306,13 @@ const handler: ProxyHandler<any> = {
   },
 };
 
-// 1. Export the GenesisMaker class itself
+// 1. 导出 GenesisMaker 类本身
 export { GenesisMaker };
 
-// 2. (Optional) Provide a clear factory function as syntactic sugar
+// 2. (可选) 提供一个清晰的工厂函数作为语法糖
 export function createMaker(): GenesisMaker {
     return new GenesisMaker();
 }
 
-// 3. (Recommended) Use a Proxy to provide a more flexible unified entry point
+// 3. (推荐) 使用 Proxy 提供更灵活的统一入口点
 export const Maker = new Proxy({}, handler) as unknown as GenesisMaker;

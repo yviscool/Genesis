@@ -4,6 +4,10 @@ import path from 'node:path';
 import { consola } from 'consola';
 import { t } from '../i18n';
 
+// -----------------------------------------------------------------------------
+// --- 模板定义 ---
+// -----------------------------------------------------------------------------
+
 const CPP_STD = `#include <iostream>
 
 int main() {
@@ -16,7 +20,7 @@ int main() {
 
 const CPP_BUGGY = `#include <iostream>
 
-// A buggy solution that uses int, which may cause overflow.
+// 一个有 Bug 的解法，使用了 int 可能导致溢出。
 int main() {
     int a, b;
     std::cin >> a >> b;
@@ -40,7 +44,7 @@ const GO_BUGGY = `package main
 
 import "fmt"
 
-// A buggy solution that uses int32, which may cause overflow.
+// 一个有 Bug 的解法，使用了 int32 可能导致溢出。
 func main() {
     var a, b int32
     fmt.Scan(&a, &b)
@@ -62,7 +66,7 @@ fn main() {
 
 const RUST_BUGGY = `use std::io;
 
-// A buggy solution that uses i32, which may cause overflow.
+// 一个有 Bug 的解法，使用了 i32 可能导致溢出。
 fn main() {
     let mut input = String::new();
     io::stdin().read_line(&mut input).unwrap();
@@ -88,7 +92,7 @@ public class Main {
 
 const JAVA_BUGGY = `import java.util.Scanner;
 
-// A buggy solution that uses int, which may cause overflow.
+// 一个有 Bug 的解法，使用了 int 可能导致溢出。
 public class My {
     public static void main(String[] args) {
         Scanner sc = new Scanner(System.in);
@@ -105,7 +109,7 @@ print(a + b)
 `;
 
 const PYTHON_BUGGY = `a, b = map(int, input().split())
-# A buggy solution that gives a wrong answer.
+# 一个有 Bug 的解法，会输出错误答案。
 print(a + b + 1)
 `;
 
@@ -122,7 +126,7 @@ rl.on('line', (line) => {
 const JS_BUGGY = `const readline = require('readline');
 const rl = readline.createInterface({ input: process.stdin });
 
-// A buggy solution that gives a wrong answer.
+// 一个有 Bug 的解法，会输出错误答案。
 rl.on('line', (line) => {
   const [a, b] = line.split(' ').map(BigInt);
   console.log((a + b + 1n).toString());
@@ -157,14 +161,14 @@ Checker
     target: '${target}',
   })
   .gen(() => {
-    // 95% chance to generate numbers that fit in int
+    // 95% 的概率生成适合 int 的数字
     if (Math.random() < 0.95) {
       return [[G.int(1, 1e9), G.int(1, 1e9)]];
     }
-    // 5% chance to generate a HACK case that causes overflow
+    // 5% 的概率生成会导致溢出的 HACK 数据
     return [[G.int(1.5e9, 2e9), G.int(1.5e9, 2e9)]];
   })
-  .run(10000); // Run up to 10,000 times or until a bug is found
+  .run(10000); // 最多运行 10,000 次，或直到发现 Bug
 `;
 
 const templates: { [lang: string]: { [file: string]: string } } = {
@@ -219,4 +223,3 @@ export async function handleInit(directory?: string, options: { lang?: string, f
     process.exit(1);
   }
 }
-

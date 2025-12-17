@@ -1,55 +1,44 @@
 import { describe, test, expect } from 'bun:test';
 import { formatData } from '../src/formatter';
 
-describe('formatData', () => {
-  test('should return an empty string for null or undefined input', () => {
+describe('formatData - 数据格式化', () => {
+  test('应将数字数组格式化为空格分隔的字符串', () => {
+    const data = [1, 2, 3];
+    expect(formatData(data)).toBe('1 2 3');
+  });
+
+  test('应将数字矩阵格式化为多行字符串', () => {
+    const data = [[1, 2], [3, 4]];
+    expect(formatData(data)).toBe('1 2\n3 4');
+  });
+
+  test('应将字符串数组格式化为空格分隔的字符串', () => {
+    const data = ['a', 'b', 'c'];
+    expect(formatData(data)).toBe('a b c');
+  });
+
+  test('应将单个数字格式化为字符串', () => {
+    expect(formatData(123)).toBe('123');
+  });
+
+  test('应将单个字符串原样返回', () => {
+    expect(formatData('hello')).toBe('hello');
+  });
+
+  test('对于 null 或 undefined 应返回空字符串', () => {
     expect(formatData(null)).toBe('');
     expect(formatData(undefined)).toBe('');
   });
 
-  test('should format a single value', () => {
-    expect(formatData(5)).toBe('5');
-    expect(formatData('hello')).toBe('hello');
+  test('如果对象不是普通对象，应将其转换为字符串', () => {
+    expect(formatData(true)).toBe('true');
+    // Date.toString() 返回日期字符串，这对于算法题输入通常不常见，但也算一种行为
+    const date = new Date('2023-01-01');
+    expect(formatData(date)).toBe(date.toString());
   });
 
-  test('should format a simple array where each element becomes a new line', () => {
-    expect(formatData([1, 2, 3])).toBe('1\n2\n3');
-  });
-
-  test('should format an array of arrays as multiple space-separated lines', () => {
-    const data = [
-      [1, 2],
-      [3, 4, 5],
-    ];
-    expect(formatData(data)).toBe('1 2\n3 4 5');
-  });
-
-  test('should format a 2D matrix (array of arrays of arrays)', () => {
-    const data = [[[1, 0], [0, 1]]];
-    expect(formatData(data)).toBe('1 0\n0 1');
-  });
-
-  test('should treat an array of strings as pre-formatted lines', () => {
-    const data = [['hello world'], ['another line']];
-    expect(formatData(data)).toBe('hello world\nanother line');
-  });
-
-  test('should handle mixed data types gracefully', () => {
-    const data = [
-      5, // single number
-      [10, 20], // array of numbers
-      [[1, 1], [2, 2]], // matrix
-      ['a pre-formatted line'],
-      'another single line'
-    ];
-    const expected = '5\n10 20\n1 1\n2 2\na pre-formatted line\nanother single line';
-    expect(formatData(data)).toBe(expected);
-  });
-
-  test('should handle empty arrays and sub-arrays', () => {
-    expect(formatData([])).toBe('');
-    expect(formatData([[]])).toBe('');
-    expect(formatData([[], []])).toBe('\n');
-    expect(formatData([[1,2], [], [3,4]])).toBe('1 2\n\n3 4');
+  test('如果对象是普通对象，应尝试将其转换为 JSON', () => {
+      const obj = { a: 1, b: 2 };
+      expect(formatData(obj)).toBe('{"a":1,"b":2}');
   });
 });

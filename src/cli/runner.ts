@@ -15,7 +15,7 @@ export async function runScript(scriptName: 'make.ts' | 'check.ts') {
     process.exit(1);
   }
 
-  // Define runners in order of preference: bun -> node -> tsx
+  // 按优先级定义运行器: bun -> node -> tsx
   const runners: [string, string[]][] = [
     ['bun', [scriptPath]],
     ['node', [scriptPath]],
@@ -25,24 +25,24 @@ export async function runScript(scriptName: 'make.ts' | 'check.ts') {
   for (let i = 0; i < runners.length; i++) {
     const [command, args] = runners[i];
     try {
-      // Attempt to run with the current runner
+      // 尝试使用当前运行器执行
       await execa(command, args, { stdio: 'inherit' });
-      // If successful, we're done.
+      // 如果成功则完成
       return;
     } catch (error: any) {
-      // If the command itself is not found, try the next runner.
+      // 如果命令本身找不到，尝试下一个运行器
       if (error.code === 'ENOENT') {
         consola.debug(`Runner '${command}' not found, trying next...`);
         continue;
       }
       
-      // If the runner was found but the script failed (non-zero exit code),
-      // execa throws an error. We should exit the process and not try other runners.
+      // 如果运行器找到了但脚本执行失败 (非零退出码)，
+      // execa 会抛出错误。我们应该退出进程而不是尝试其他运行器。
       process.exit(1);
     }
   }
 
-  // If all runners failed to be found
+  // 如果所有运行器都未找到
   consola.error('Could not find a suitable TypeScript runtime (bun, node, or tsx). Please install one.');
   process.exit(1);
 }

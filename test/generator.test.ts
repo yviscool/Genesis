@@ -1,9 +1,9 @@
 import { describe, test, expect, mock } from 'bun:test';
 import { G } from '../src/generator';
 
-describe('G (Generator)', () => {
-  describe('G.CHARSET', () => {
-    test('should have correct predefined charsets', () => {
+describe('G (Generator) - 生成器测试', () => {
+  describe('G.CHARSET - 字符集', () => {
+    test('应包含正确的预定义字符集', () => {
       expect(G.CHARSET.LOWERCASE).toBe('abcdefghijklmnopqrstuvwxyz');
       expect(G.CHARSET.UPPERCASE).toBe('ABCDEFGHIJKLMNOPQRSTUVWXYZ');
       expect(G.CHARSET.DIGITS).toBe('0123456789');
@@ -13,8 +13,8 @@ describe('G (Generator)', () => {
     });
   });
 
-  describe('G.int', () => {
-    test('should generate an integer within the specified range', () => {
+  describe('G.int - 整数生成', () => {
+    test('应生成指定范围内的整数', () => {
       const min = 1;
       const max = 10;
       const result = G.int(min, max);
@@ -25,8 +25,8 @@ describe('G (Generator)', () => {
     });
   });
 
-  describe('G.ints', () => {
-    test('should generate an array of integers of the specified count', () => {
+  describe('G.ints - 整数数组生成', () => {
+    test('应生成指定数量的整数数组', () => {
       const count = 5;
       const min = 1;
       const max = 100;
@@ -41,8 +41,8 @@ describe('G (Generator)', () => {
     });
   });
 
-  describe('G.distinctInts', () => {
-    test('should generate an array of distinct integers of the specified count', () => {
+  describe('G.distinctInts - 不重复整数生成', () => {
+    test('应生成指定数量的互不相同整数数组', () => {
       const count = 5;
       const min = 1;
       const max = 10;
@@ -57,13 +57,13 @@ describe('G (Generator)', () => {
       });
     });
 
-    test('should throw an error if count is greater than the range', () => {
+    test('当数量超过范围大小时应抛出错误', () => {
       expect(() => G.distinctInts(10, 1, 5)).toThrow('Cannot generate 10 distinct integers from a range of size 5.');
     });
   });
 
-  describe('G.float', () => {
-    test('should generate a float within the specified range and precision', () => {
+  describe('G.float - 浮点数生成', () => {
+    test('应生成指定范围和精度的浮点数', () => {
       const min = 1.0;
       const max = 2.0;
       const precision = 4;
@@ -75,8 +75,8 @@ describe('G (Generator)', () => {
     });
   });
 
-  describe('G.even', () => {
-    test('should generate an even number within the specified range', () => {
+  describe('G.even - 偶数生成', () => {
+    test('应生成指定范围内的偶数', () => {
       const min = 1;
       const max = 10;
       const result = G.even(min, max);
@@ -86,13 +86,13 @@ describe('G (Generator)', () => {
       expect(result % 2).toBe(0);
     });
 
-    test('should throw an error if no even numbers exist in the range', () => {
+    test('如果在范围内没有偶数应抛出错误', () => {
       expect(() => G.even(1, 1)).toThrow('No even numbers exist in the range [1, 1].');
     });
   });
 
-  describe('G.odd', () => {
-    test('should generate an odd number within the specified range', () => {
+  describe('G.odd - 奇数生成', () => {
+    test('应生成指定范围内的奇数', () => {
       const min = 1;
       const max = 10;
       const result = G.odd(min, max);
@@ -102,20 +102,20 @@ describe('G (Generator)', () => {
       expect(result % 2).toBe(1);
     });
 
-    test('should throw an error if no odd numbers exist in the range', () => {
+    test('如果在范围内没有奇数应抛出错误', () => {
       expect(() => G.odd(2, 2)).toThrow('No odd numbers exist in the range [2, 2].');
     });
   });
 
-  describe('G.string', () => {
-    test('should generate a string of the specified length', () => {
+  describe('G.string - 字符串生成', () => {
+    test('应生成指定长度的字符串', () => {
       const len = 15;
       const result = G.string(len);
       expect(result).toBeTypeOf('string');
       expect(result.length).toBe(len);
     });
 
-    test('should generate a string using the provided charset', () => {
+    test('应使用提供的字符集生成字符串', () => {
       const len = 20;
       const charset = 'abc';
       const result = G.string(len, charset);
@@ -126,29 +126,29 @@ describe('G (Generator)', () => {
     });
   });
 
-  describe('G.palindrome', () => {
-    test('should generate a valid palindrome of odd length', () => {
+  describe('G.palindrome - 回文串生成', () => {
+    test('应生成指定长度的有效奇数长度回文串', () => {
         const len = 7;
         const result = G.palindrome(len);
         expect(result.length).toBe(len);
         expect(result).toEqual(result.split('').reverse().join(''));
     });
 
-    test('should generate a valid palindrome of even length', () => {
+    test('应生成指定长度的有效偶数长度回文串', () => {
         const len = 8;
         const result = G.palindrome(len);
         expect(result.length).toBe(len);
         expect(result).toEqual(result.split('').reverse().join(''));
     });
 
-    test('should return empty string for length 0 or less', () => {
+    test('对于长度 0 或更小应返回空字符串', () => {
       expect(G.palindrome(0)).toBe('');
       expect(G.palindrome(-5)).toBe('');
     });
   });
 
-  describe('G.word', () => {
-    test('should generate a word with length within minLen and maxLen', () => {
+  describe('G.word - 单词生成', () => {
+    test('应生成长度在 minLen 和 maxLen 之间的单词', () => {
       const minLen = 5;
       const maxLen = 10;
       const result = G.word(minLen, maxLen);
@@ -159,8 +159,8 @@ describe('G (Generator)', () => {
     });
   });
 
-  describe('G.words', () => {
-    test('should generate an array of words with correct count and lengths', () => {
+  describe('G.words - 单词数组生成', () => {
+    test('应生成数量和长度正确的单词数组', () => {
       const count = 3;
       const minLen = 4;
       const maxLen = 6;
@@ -175,8 +175,8 @@ describe('G (Generator)', () => {
     });
   });
 
-  describe('G.array', () => {
-    test('should generate an array using the itemGenerator', () => {
+  describe('G.array - 数组生成', () => {
+    test('应使用 itemGenerator 生成数组', () => {
       const count = 5;
       const itemGenerator = (i: number) => `item-${i}`;
       const result = G.array(count, itemGenerator);
@@ -185,8 +185,8 @@ describe('G (Generator)', () => {
     });
   });
 
-  describe('G.sorted', () => {
-    test('should generate a sorted array (asc by default)', () => {
+  describe('G.sorted - 有序数组生成', () => {
+    test('应生成排序数组 (默认升序)', () => {
       const result = G.sorted(10, 1, 100);
       expect(result).toBeArrayOfSize(10);
       for (let i = 0; i < result.length - 1; i++) {
@@ -194,7 +194,7 @@ describe('G (Generator)', () => {
       }
     });
 
-    test('should generate a strictly ascending array', () => {
+    test('应生成严格升序数组', () => {
       const result = G.sorted(10, 1, 100, { order: 'strictlyAsc' });
       expect(result).toBeArrayOfSize(10);
       for (let i = 0; i < result.length - 1; i++) {
@@ -202,7 +202,7 @@ describe('G (Generator)', () => {
       }
     });
 
-    test('should generate a descending array', () => {
+    test('应生成降序数组', () => {
       const result = G.sorted(10, 1, 100, { order: 'desc' });
       expect(result).toBeArrayOfSize(10);
       for (let i = 0; i < result.length - 1; i++) {
@@ -210,7 +210,7 @@ describe('G (Generator)', () => {
       }
     });
 
-    test('should generate a strictly descending array', () => {
+    test('应生成严格降序数组', () => {
       const result = G.sorted(10, 1, 100, { order: 'strictlyDesc' });
       expect(result).toBeArrayOfSize(10);
       for (let i = 0; i < result.length - 1; i++) {
@@ -219,8 +219,8 @@ describe('G (Generator)', () => {
     });
   });
 
-  describe('G.sparse', () => {
-    test('should generate a sparse array with the specified gap', () => {
+  describe('G.sparse - 稀疏数组生成', () => {
+    test('应生成具有指定间隔的稀疏数组', () => {
       const count = 5;
       const min = 1;
       const max = 50;
@@ -237,13 +237,13 @@ describe('G (Generator)', () => {
       });
     });
 
-    test('should throw an error if the range is too small for the gap', () => {
+    test('如果范围对于间隔太小应抛出错误', () => {
       expect(() => G.sparse(3, 1, 10, 5)).toThrow('Cannot generate 3 sparse numbers with gap 5 in range [1, 10]. Range is too small.');
     });
   });
 
-  describe('G.partition', () => {
-    test('should generate an array whose elements sum up to the target sum', () => {
+  describe('G.partition - 整数拆分生成', () => {
+    test('应生成元素之和等于目标和的数组', () => {
       const count = 5;
       const sum = 100;
       const result = G.partition(count, sum);
@@ -253,7 +253,7 @@ describe('G (Generator)', () => {
       result.forEach(num => expect(num).toBeGreaterThanOrEqual(1));
     });
 
-    test('should respect minVal option', () => {
+    test('应遵守 minVal 选项', () => {
       const count = 3;
       const sum = 30;
       const minVal = 10;
@@ -264,13 +264,13 @@ describe('G (Generator)', () => {
       result.forEach(num => expect(num).toBeGreaterThanOrEqual(minVal));
     });
 
-    test('should throw an error if sum is too small for minVal', () => {
+    test('如果 sum 对于 minVal 来说太小应抛出错误', () => {
       expect(() => G.partition(5, 10, { minVal: 3 })).toThrow('Cannot partition sum 10 into 5 parts with minVal 3. Required sum is at least 15.');
     });
   });
 
-  describe('G.matrix', () => {
-    test('should generate a matrix with the correct dimensions', () => {
+  describe('G.matrix - 矩阵生成', () => {
+    test('应生成具有正确维度的矩阵', () => {
       const rows = 3;
       const cols = 4;
       const result = G.matrix(rows, cols, () => 0);
@@ -280,7 +280,7 @@ describe('G (Generator)', () => {
       expect(result[2]).toBeArrayOfSize(cols);
     });
 
-    test('should use the cellGenerator correctly', () => {
+    test('应正确使用 cellGenerator', () => {
       const rows = 2;
       const cols = 2;
       const cellGenerator = (r: number, c: number) => `(${r},${c})`;
@@ -289,8 +289,8 @@ describe('G (Generator)', () => {
     });
   });
 
-  describe('G.grid01', () => {
-    test('should generate a 01 grid with correct dimensions', () => {
+  describe('G.grid01 - 01矩阵生成', () => {
+    test('应生成具有正确维度的 01 矩阵', () => {
       const rows = 5;
       const cols = 5;
       const result = G.grid01(rows, cols);
@@ -303,31 +303,21 @@ describe('G (Generator)', () => {
       });
     });
 
-    test('should respect density option', () => {
+    test('应遵守 density 选项', () => {
       const rows = 10;
       const cols = 10;
       const density = 0.1;
       const result = G.grid01(rows, cols, density);
       let onesCount = 0;
       result.forEach(row => row.forEach(cell => { if (cell === 1) onesCount++; }));
-      // Allow some deviation due to randomness
+      // 允许由于随机性产生的偏差
       expect(onesCount).toBeGreaterThanOrEqual(rows * cols * (density - 0.1));
       expect(onesCount).toBeLessThanOrEqual(rows * cols * (density + 0.1));
     });
-
-    // Temporarily commenting out this test due to issues with Bun's console.warn mocking
-    // test('should fallback to random points if collinear generation fails', () => {
-    //   const consoleWarnSpy = mock(console, 'warn');
-    //   // Force an impossible condition for collinear points to reliably trigger the fallback
-    //   const result = G.points(100, 0, 0, { type: 'collinear' }); 
-    //   expect(consoleWarnSpy).toHaveBeenCalled();
-    //   expect(result).toBeArrayOfSize(100);
-    //   consoleWarnSpy.restore();
-    // });
   });
 
-  describe('G.base.convert', () => {
-    test('should convert between bases correctly', () => {
+  describe('G.base.convert - 进制转换', () => {
+    test('应正确在不同进制间转换', () => {
         expect(G.base.convert('1010', 2, 10)).toBe('10');
         expect(G.base.convert('F', 16, 10)).toBe('15');
         expect(G.base.convert(255, 10, 16)).toBe('FF');
@@ -337,53 +327,53 @@ describe('G (Generator)', () => {
         expect(G.base.convert(35, 10, 36)).toBe('Z');
     });
 
-    test('should handle BigInt input', () => {
+    test('应处理 BigInt 输入', () => {
       expect(G.base.convert(BigInt('1000000000000000000'), 10, 16)).toBe('DE0B6B3A7640000');
     });
 
-    test('should throw error for invalid input characters', () => {
+    test('对于非法输入字符应抛出错误', () => {
         expect(() => G.base.convert('102', 2, 10)).toThrow('Input "102" contains invalid characters for base 2.');
         expect(() => G.base.convert('G', 16, 10)).toThrow('Input "G" contains invalid characters for base 16.');
     });
 
-    test('should throw error for invalid radix', () => {
+    test('对于非法进制应抛出错误', () => {
       expect(() => G.base.convert('10', 1, 10)).toThrow('Radix must be an integer between 2 and 36. Received: from=1, to=10');
       expect(() => G.base.convert('10', 10, 37)).toThrow('Radix must be an integer between 2 and 36. Received: from=10, to=37');
     });
   });
 
-  describe('G.base.binToHex', () => {
-    test('should convert binary to hexadecimal', () => {
+  describe('G.base.binToHex - 二进制转十六进制', () => {
+    test('应将二进制转换为十六进制', () => {
       expect(G.base.binToHex('111100001010')).toBe('F0A');
       expect(G.base.binToHex('101')).toBe('5');
     });
 
-    test('should throw error for invalid binary input', () => {
+    test('对于非法二进制输入应抛出错误', () => {
       expect(() => G.base.binToHex('1012')).toThrow();
     });
   });
 
-  describe('G.base.hexToBin', () => {
-    test('should convert hexadecimal to binary', () => {
+  describe('G.base.hexToBin - 十六进制转二进制', () => {
+    test('应将十六进制转换为二进制', () => {
       expect(G.base.hexToBin('F0A')).toBe('111100001010');
       expect(G.base.hexToBin('5')).toBe('101');
     });
 
-    test('should throw error for invalid hexadecimal input', () => {
+    test('对于非法十六进制输入应抛出错误', () => {
       expect(() => G.base.hexToBin('G')).toThrow();
     });
   });
 
-  describe('G.base.digits', () => {
-    test('should generate a random number string of specified length and radix', () => {
+  describe('G.base.digits - 随机数字符串生成', () => {
+    test('应生成指定长度和进制的随机数字符串', () => {
       const length = 10;
       const radix = 16;
       const result = G.base.digits(length, radix);
       expect(result.length).toBe(length);
-      expect(result).toMatch(/^[1-9A-F][0-9A-F]*$/); // No leading zero, correct charset
+      expect(result).toMatch(/^[1-9A-F][0-9A-F]*$/); // 无前导零，字符集正确
     });
 
-    test('should generate a single digit number string', () => {
+    test('应生成单位数数字字符串', () => {
       const length = 1;
       const radix = 10;
       const result = G.base.digits(length, radix);
@@ -391,12 +381,12 @@ describe('G (Generator)', () => {
       expect(result).toMatch(/^[0-9]$/);
     });
 
-    test('should throw error for invalid radix', () => {
+    test('对于非法进制应抛出错误', () => {
       expect(() => G.base.digits(5, 1)).toThrow('Radix must be an integer between 2 and 36. Received: 1');
       expect(() => G.base.digits(5, 37)).toThrow('Radix must be an integer between 2 and 36. Received: 37');
     });
 
-    test('should not have leading zeros for length > 1', () => {
+    test('长度 > 1 时不应有前导零', () => {
       const length = 5;
       const radix = 10;
       const result = G.base.digits(length, radix);
@@ -407,8 +397,8 @@ describe('G (Generator)', () => {
     });
   });
 
-  describe('G.tree', () => {
-    test('should generate a random tree with correct number of vertices and edges', () => {
+  describe('G.tree - 树生成', () => {
+    test('应生成具有正确顶点数和边数的随机树', () => {
       const n = 10;
       const tree = G.tree(n);
       const nodes = new Set<number>();
@@ -420,7 +410,7 @@ describe('G (Generator)', () => {
       expect(nodes.size).toBe(n);
     });
 
-    test('should generate a path graph', () => {
+    test('应生成链图 (Path Graph)', () => {
       const n = 5;
       const tree = G.tree(n, { type: 'path' });
       const degrees = new Map<number, number>();
@@ -441,7 +431,7 @@ describe('G (Generator)', () => {
       expect(internalNodes).toBe(n - 2);
     });
 
-    test('should generate a star graph', () => {
+    test('应生成菊花图 (Star Graph)', () => {
       const n = 7;
       const tree = G.tree(n, { type: 'star' });
       const degrees = new Map<number, number>();
@@ -462,7 +452,7 @@ describe('G (Generator)', () => {
       expect(leafNodes).toBe(n - 1);
     });
 
-    test('should respect oneBased: false option', () => {
+    test('应遵守 oneBased: false 选项', () => {
       const tree = G.tree(5, { oneBased: false });
       const nodes = new Set<number>();
       tree.forEach(([u, v]) => {
@@ -473,7 +463,7 @@ describe('G (Generator)', () => {
       expect(Math.max(...nodes)).toBe(4);
     });
 
-    test('should generate weighted edges', () => {
+    test('应生成带权边', () => {
       const tree = G.tree(8, { weighted: [10, 20] });
       expect(tree[0].length).toBe(3);
       tree.forEach(edge => {
@@ -483,8 +473,8 @@ describe('G (Generator)', () => {
     });
   });
 
-  describe('G.graph', () => {
-    test('should generate a simple graph with n vertices and m edges', () => {
+  describe('G.graph - 图生成', () => {
+    test('应生成包含 n 个顶点 m 条边的简单图', () => {
       const n = 20;
       const m = 50;
       const graph = G.graph(n, m);
@@ -494,17 +484,17 @@ describe('G (Generator)', () => {
         nodes.add(v);
       });
       expect(graph.length).toBe(m);
-      // Note: Not all nodes are guaranteed to be in an edge set if m is small
+      // 注意: 如果 m 较小，不保证所有节点都出现在边集中
     });
 
-    test('should not generate self-loops by default', () => {
+    test('默认情况下不应生成自环', () => {
       const graph = G.graph(10, 30, { noSelfLoops: true });
       graph.forEach(([u, v]) => {
         expect(u).not.toBe(v);
       });
     });
 
-    test('should generate a connected graph', () => {
+    test('应生成连通图', () => {
       const n = 15;
       const m = 20;
       const graph = G.graph(n, m, { connected: true });
@@ -534,7 +524,7 @@ describe('G (Generator)', () => {
       expect(visited.size).toBe(n);
     });
 
-    test('should generate a directed acyclic graph (DAG)', () => {
+    test('应生成有向无环图 (DAG)', () => {
       const n = 10;
       const m = 15;
       const graph = G.graph(n, m, { type: 'dag', directed: true, oneBased: false });
@@ -567,10 +557,10 @@ describe('G (Generator)', () => {
         });
       }
 
-      expect(count).toBe(n); // If all nodes are visited, there is no cycle
+      expect(count).toBe(n); // 如果所有节点都被访问，说明没有环
     });
 
-    test('should generate a bipartite graph', () => {
+    test('应生成二分图', () => {
       const n = 12;
       const m = 20;
       const graph = G.graph(n, m, { type: 'bipartite', oneBased: false });
@@ -614,37 +604,37 @@ describe('G (Generator)', () => {
       expect(isBipartite).toBe(true);
     });
 
-    test('should throw error when edges exceed max for DAG', () => {
-        // Max edges for DAG n=10 is 45
+    test('当边数超过 DAG 最大限制时应抛出错误', () => {
+        // DAG n=10 最大边数是 45
         expect(() => G.graph(10, 46, { type: 'dag', directed: true })).toThrow(/can have at most 45 edges/);
     });
 
-    test('should handle bipartite max edges correctly', () => {
-        // n=10, max edges for bipartite (undirected) is 5*5=25
+    test('应正确处理二分图的最大边数限制', () => {
+        // n=10, 二分图 (无向) 最大边数是 5*5=25
         expect(() => G.graph(10, 26, { type: 'bipartite', directed: false })).toThrow(/can have at most 25 edges/);
-        // n=10, max edges for bipartite (directed) is 2*5*5=50
+        // n=10, 二分图 (有向) 最大边数是 2*5*5=50
         expect(() => G.graph(10, 51, { type: 'bipartite', directed: true })).toThrow(/can have at most 50 edges/);
     });
 
-    test('should always succeed in generating bipartite graph if edges are within range (prevent random hang)', () => {
-        // Previous bug: partition could be 1 vs 9, max edges 9. Requesting 20 would hang.
-        // Now it should ensure partition is balanced enough.
+    test('如果边数在范围内应始终成功生成二分图 (防止随机挂起)', () => {
+        // 之前的 bug: 划分可能是 1 vs 9，最大边数 9。请求 20 条边会挂起。
+        // 现在应确保划分足够平衡。
         const n = 10;
         const m = 20;
-        // Try multiple times to ensure no flaky behavior
+        // 尝试多次以确保无不稳定的行为
         for(let i=0; i<10; i++) {
             const graph = G.graph(n, m, { type: 'bipartite' });
             expect(graph.length).toBe(m);
         }
     });
 
-    test('should generate connected bipartite graph', () => {
+    test('应生成连通二分图', () => {
         const n = 10;
         const m = 15;
         const graph = G.graph(n, m, { type: 'bipartite', connected: true, oneBased: false });
         expect(graph.length).toBe(m);
 
-        // Verify connectivity
+        // 验证连通性
         const adj = new Map<number, number[]>();
         for(let i=0; i<n; i++) adj.set(i, []);
         graph.forEach(([u, v]) => {
@@ -667,15 +657,13 @@ describe('G (Generator)', () => {
         expect(visited.size).toBe(n);
     });
 
-    test('should generate connected DAG', () => {
+    test('应生成连通 DAG', () => {
         const n = 10;
         const m = 15;
         const graph = G.graph(n, m, { type: 'dag', connected: true, oneBased: false });
         expect(graph.length).toBe(m);
 
-        // Verify connectivity (ignoring direction for connectivity check, or check weak connectivity)
-        // The implementation ensures u->v implies i < j in topological sort, but connectivity is undirected concept usually
-        // unless strongly connected (impossible for DAG). So we check weak connectivity.
+        // 验证连通性 (检查弱连通性)
         const adj = new Map<number, number[]>();
         for(let i=0; i<n; i++) adj.set(i, []);
         graph.forEach(([u, v]) => {
@@ -700,7 +688,7 @@ describe('G (Generator)', () => {
 
   });
 
-  // G.debug is primarily for console logging, so direct testing of its output is complex and often brittle.
-  // It's usually sufficient to ensure it doesn't throw errors and potentially mock console.log if needed.
-  // For now, we'll omit explicit tests for G.debug.
+  // G.debug 主要用于控制台日志，直接测试其输出较为复杂且易碎。
+  // 通常只需确保其不抛出错误，必要时可以 mock console.log。
+  // 暂时跳过对 G.debug 的显式测试。
 });
