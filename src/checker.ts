@@ -1,6 +1,7 @@
 // src/checker.ts
 import { consola } from 'consola';
 import ora from 'ora';
+import pc from 'picocolors';
 import { execa, type ExecaError } from 'execa';
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -9,6 +10,8 @@ import { prepareForExecution } from './execution';
 import { compareOutputs } from './differ';
 import { formatData } from './formatter';
 import { t } from './i18n';
+import { highlightDiff } from './diff-highlight';
+import { formatRuntimeError, getSignalFromExitCode } from './error-formatter';
 
 // =============================================================================
 // --- 常量 & 默认值 ---
@@ -24,6 +27,15 @@ const FAIL_ARTIFACTS = {
   my: '_checker_my.out',
 };
 
+// 失败记录类型
+interface FailureRecord {
+  testNumber: number;
+  type: 'WA' | 'RE' | 'TLE' | 'RE_STD';
+  input: string;
+  stdOut: string;
+  myOut: string;
+}
+
 // =============================================================================
 // --- 核心实现类 ---
 // =============================================================================
@@ -32,6 +44,7 @@ export class GenesisChecker {
   private config: CheckerConfig & { compareMode: CompareMode };
   private generator: (() => any) | null = null;
   private timeoutMs: number = 5000; // 默认超时时间: 5s
+  private continueMode: boolean = false; // 继续模式：收集所有失败
 
   constructor() {
     // @ts-expect-error - std 和 target 是必需的，将在 configure 中设置
@@ -79,6 +92,16 @@ export class GenesisChecker {
   }
 
   /**
+   * 启用继续模式：即使遇到错误也继续运行，收集所有失败点。
+   * @param enabled 是否启用。
+   * @returns {this} 返回实例自身以支持链式调用。
+   */
+  public continue(enabled: boolean = true): this {
+    this.continueMode = enabled;
+    return this;
+  }
+
+  /**
    * 启动对拍流程。
    * @param count 要运行的测试用例数量。
    */
@@ -108,10 +131,16 @@ export class GenesisChecker {
     const [stdCommand, ...stdArgs] = stdExec.runArgs;
     const [targetCommand, ...targetArgs] = targetExec.runArgs;
 
+    // --- 统计变量 ---
+    const startTime = Date.now();
+    const failures: FailureRecord[] = [];
+    let passCount = 0;
+
     // --- 对拍循环 ---
-    const spinner = ora(t('checker.runningTests', 0, count)).start();
+    const spinner = ora(this.formatProgress(0, count, 0, startTime)).start();
+
     for (let i = 1; i <= count; i++) {
-      spinner.text = t('checker.runningTests', i, count);
+      spinner.text = this.formatProgress(i, count, passCount, startTime);
 
       const rawInput = this.generator();
       const formattedInput = formatData(rawInput);
@@ -122,8 +151,21 @@ export class GenesisChecker {
         stdOutput = stdout;
       } catch (error) {
         spinner.fail(t('checker.stdCrashed', i));
-        await this.reportFailure(i, 'RE_STD', formattedInput, String((error as ExecaError).stderr || ''), '');
-        return;
+        const failure: FailureRecord = {
+          testNumber: i,
+          type: 'RE_STD',
+          input: formattedInput,
+          stdOut: String((error as ExecaError).stderr || ''),
+          myOut: ''
+        };
+
+        if (this.continueMode) {
+          failures.push(failure);
+          continue;
+        } else {
+          await this.reportFailure(failure);
+          return;
+        }
       }
 
       try {
@@ -135,25 +177,68 @@ export class GenesisChecker {
         const passed = compareOutputs(stdOutput, myOutput, this.config.compareMode);
 
         if (!passed) {
-          spinner.fail(t('checker.wrongAnswer', i));
-          await this.reportFailure(i, 'WA', formattedInput, stdOutput, myOutput);
-          return;
+          const failure: FailureRecord = {
+            testNumber: i,
+            type: 'WA',
+            input: formattedInput,
+            stdOut: stdOutput,
+            myOut: myOutput
+          };
+
+          if (this.continueMode) {
+            failures.push(failure);
+            spinner.text = this.formatProgress(i, count, passCount, startTime, failures.length);
+          } else {
+            spinner.fail(t('checker.wrongAnswer', i));
+            await this.reportFailure(failure);
+            return;
+          }
+        } else {
+          passCount++;
         }
 
       } catch (error) {
         const execaError = error as ExecaError;
-        if (execaError.timedOut) {
-          spinner.fail(t('checker.timeLimitExceeded', i));
-          await this.reportFailure(i, 'TLE', formattedInput, stdOutput, '[Time Limit Exceeded]');
+        const failure: FailureRecord = {
+          testNumber: i,
+          type: execaError.timedOut ? 'TLE' : 'RE',
+          input: formattedInput,
+          stdOut: stdOutput,
+          myOut: execaError.timedOut ? '[Time Limit Exceeded]' : String(execaError.stderr || '[No stderr]')
+        };
+
+        if (this.continueMode) {
+          failures.push(failure);
+          spinner.text = this.formatProgress(i, count, passCount, startTime, failures.length);
         } else {
-          spinner.fail(t('checker.runtimeError', i));
-          await this.reportFailure(i, 'RE', formattedInput, stdOutput, String(execaError.stderr || '[No stderr]'));
+          spinner.fail(execaError.timedOut ? t('checker.timeLimitExceeded', i) : t('checker.runtimeError', i));
+          await this.reportFailure(failure);
+          return;
         }
-        return;
       }
     }
 
-    spinner.succeed(t('checker.allPassed', count));
+    // --- 结果报告 ---
+    const elapsed = Date.now() - startTime;
+
+    if (failures.length === 0) {
+      spinner.succeed(pc.green(t('checker.allPassedWithTime', count, this.formatTime(elapsed))));
+    } else {
+      spinner.fail(pc.red(t('checker.foundErrors', failures.length)) + pc.dim(` ${t('checker.passedCount', passCount, count)}`));
+
+      // 报告所有失败（继续模式）
+      consola.log('');
+      for (const failure of failures.slice(0, 5)) { // 最多显示前 5 个
+        await this.reportFailure(failure, true);
+      }
+
+      if (failures.length > 5) {
+        consola.info(pc.dim(t('checker.moreErrors', failures.length - 5)));
+      }
+
+      // 保存第一个失败的数据
+      await this.saveArtifacts(failures[0]);
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -161,44 +246,105 @@ export class GenesisChecker {
   // ---------------------------------------------------------------------------
 
   /**
-   * 报告错误并保存相关文件 (Artifacts)。
-   * @param testNumber 失败的测试用例编号。
-   * @param type 错误类型 (WA, RE, TLE, RE_STD)。
-   * @param input 导致失败的输入数据。
-   * @param stdOut 标程的输出。
-   * @param myOut 目标程序的输出或错误信息。
+   * 格式化进度显示
    */
-  private async reportFailure(testNumber: number, type: string, input: string, stdOut: string, myOut: string): Promise<void> {
+  private formatProgress(current: number, total: number, passed: number, startTime: number, failures: number = 0): string {
+    const elapsed = Date.now() - startTime;
+    const speed = current > 0 ? (current / elapsed * 1000).toFixed(1) : '0';
+    const eta = current > 0 ? this.formatTime((elapsed / current) * (total - current)) : '--';
+
+    let status = failures > 0
+      ? t('checker.progressWithFails', current, total, passed, failures)
+      : t('checker.progress', current, total, passed);
+    if (failures > 0) {
+      status += ` ${pc.red(`✗${failures}`)}`;
+    }
+    status += pc.dim(` | ${speed} tests/s | ETA: ${eta}`);
+
+    return status;
+  }
+
+  /**
+   * 格式化时间
+   */
+  private formatTime(ms: number): string {
+    if (ms < 1000) return `${Math.round(ms)}ms`;
+    if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`;
+    return `${Math.floor(ms / 60000)}m${Math.round((ms % 60000) / 1000)}s`;
+  }
+
+  /**
+   * 报告错误
+   */
+  private async reportFailure(failure: FailureRecord, compact: boolean = false): Promise<void> {
     const TYPE_MESSAGES: Record<string, string> = {
       WA: t('checker.wa'),
       RE: t('checker.re'),
       TLE: t('checker.tle'),
       RE_STD: t('checker.re_std'),
     };
-    const typeMessage = TYPE_MESSAGES[type] ?? t('checker.unknownError');
+    const typeMessage = TYPE_MESSAGES[failure.type] ?? t('checker.unknownError');
+    const typeColor = failure.type === 'WA' ? pc.red : failure.type === 'TLE' ? pc.yellow : pc.magenta;
 
-    const errorMessage = `\n` +
-      `[error] [${t('checker.failedAtTest', testNumber)}] ${type} (${typeMessage})\n` +
-      `------------------------------------\n` +
-      `${t('checker.testCase', testNumber, type)}\n\n` +
-      `[${t('checker.input')}]\n${input}\n\n` +
-      `[${t('checker.stdOutput')}]\n${stdOut}\n\n` +
-      `[${t('checker.myOutput')}]\n${myOut}\n\n`;
+    consola.log('');
+    consola.log(typeColor(t('checker.failureAt', failure.type, typeMessage, failure.testNumber)));
 
-    consola.error(errorMessage);
+    // 输入数据
+    consola.log(pc.dim(t('checker.inputLabel')));
+    consola.log(this.truncateOutput(failure.input, 10));
 
+    if (failure.type === 'WA') {
+      // WA: 显示彩色 Diff
+      consola.log('');
+      consola.log(highlightDiff(failure.stdOut, failure.myOut));
+    } else if (failure.type === 'RE') {
+      // RE: 诊断运行时错误
+      consola.log('');
+      consola.log(pc.dim(t('checker.errorOutputLabel')));
+      const diagnosis = formatRuntimeError(failure.myOut);
+      consola.log(diagnosis || failure.myOut);
+    } else {
+      // TLE / RE_STD
+      consola.log('');
+      consola.log(pc.dim(t('checker.expectedOutputLabel')));
+      consola.log(this.truncateOutput(failure.stdOut, 5));
+    }
+
+    if (!compact) {
+      await this.saveArtifacts(failure);
+    }
+  }
+
+  /**
+   * 保存失败数据到文件
+   */
+  private async saveArtifacts(failure: FailureRecord): Promise<void> {
     try {
-      await fs.writeFile(FAIL_ARTIFACTS.in, input);
-      await fs.writeFile(FAIL_ARTIFACTS.std, stdOut);
-      await fs.writeFile(FAIL_ARTIFACTS.my, myOut);
-      consola.info(t('checker.artifactsSaved', FAIL_ARTIFACTS.in, FAIL_ARTIFACTS.std, FAIL_ARTIFACTS.my));
-      if (type === 'WA') {
-        consola.info(t('checker.diffHint', FAIL_ARTIFACTS.std, FAIL_ARTIFACTS.my));
+      await fs.writeFile(FAIL_ARTIFACTS.in, failure.input);
+      await fs.writeFile(FAIL_ARTIFACTS.std, failure.stdOut);
+      await fs.writeFile(FAIL_ARTIFACTS.my, failure.myOut);
+
+      consola.log('');
+      consola.info(pc.dim(t('checker.artifactsSavedCompact')));
+      consola.info(pc.dim(`   ${FAIL_ARTIFACTS.in} | ${FAIL_ARTIFACTS.std} | ${FAIL_ARTIFACTS.my}`));
+
+      if (failure.type === 'WA') {
+        consola.info(pc.cyan(t('checker.diffHintCompact', FAIL_ARTIFACTS.std, FAIL_ARTIFACTS.my)));
       }
     } catch (error) {
-      // @ts-expect-error
-      consola.error(t('checker.saveArtifactsFailed', error));
+      consola.error(t('checker.saveArtifactsFailed2'));
     }
-    consola.error(`------------------------------------`);
+  }
+
+  /**
+   * 截断过长的输出
+   */
+  private truncateOutput(text: string, maxLines: number): string {
+    const lines = text.split('\n');
+    if (lines.length <= maxLines) {
+      return pc.dim('   ') + lines.join('\n   ');
+    }
+    const shown = lines.slice(0, maxLines);
+    return pc.dim('   ') + shown.join('\n   ') + pc.dim(`\n   ${t('checker.truncated', lines.length - maxLines)}`);
   }
 }

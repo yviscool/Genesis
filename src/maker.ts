@@ -141,8 +141,18 @@ class GenesisMaker {
 
     const concurrencyLimit = os.cpus().length;
     let completedCases = 0;
+    let successCount = 0;
     const results: { name: string; success: boolean; error?: string }[] = [];
-    const spinner = ora(t('maker.generatingCases', 0, totalCases)).start();
+    const startTime = Date.now();
+
+    const formatProgress = () => {
+      const elapsed = Date.now() - startTime;
+      const speed = completedCases > 0 ? (completedCases / elapsed * 1000).toFixed(1) : '0';
+      const eta = completedCases > 0 ? this.formatTime((elapsed / completedCases) * (totalCases - completedCases)) : '--';
+      return t('maker.progress', completedCases, totalCases, speed, eta);
+    };
+
+    const spinner = ora(formatProgress()).start();
 
     const taskPool = this.caseQueue.map((caseItem, i) =>
       () => this.generateSingleCase(caseItem, this.config.startFrom + i, execResult.runArgs)
@@ -155,12 +165,22 @@ class GenesisMaker {
       for (const result of batchResults) {
         results.push(result);
         completedCases++;
-        spinner.text = t('maker.generatingCases', completedCases, totalCases);
+        if (result.success) successCount++;
+        spinner.text = formatProgress();
       }
     }
 
-    spinner.succeed(t('maker.allCasesProcessed'));
-    this.reportResults(results);
+    const elapsed = Date.now() - startTime;
+    spinner.succeed(t('maker.complete', successCount, totalCases, this.formatTime(elapsed))); this.reportResults(results);
+  }
+
+  /**
+   * 格式化时间
+   */
+  private formatTime(ms: number): string {
+    if (ms < 1000) return `${Math.round(ms)}ms`;
+    if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`;
+    return `${Math.floor(ms / 60000)}m${Math.round((ms % 60000) / 1000)}s`;
   }
 
   /**

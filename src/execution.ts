@@ -237,7 +237,10 @@ async function executeCompilation(
     return executablePath;
   } catch (error: any) {
     spinner.fail(t('compilation.compileFailed', sourceFile));
-    consola.error(t('compilation.compilerError', error.stderr || error.message));
+    // 导入 formatCompilerError 后在这里使用
+    const { formatCompilerError } = await import('./error-formatter');
+    const formattedError = formatCompilerError(error.stderr || error.message, sourceFile);
+    consola.error(formattedError);
     return null;
   }
 }
@@ -284,28 +287,39 @@ async function findRuntime(commands: readonly string[]): Promise<string | null> 
 }
 
 function getCompilerHelpMessage(lang: LanguageInfo): string {
-  let message = `Error: No ${lang.name} compiler found. Please install it and ensure it is in your system PATH.\n`;
   const platform = process.platform;
 
-  const guides: { [key: string]: { [key: string]: string } } = {
+  const installCommands: { [key: string]: { [key: string]: string } } = {
     cpp: {
-      win32: t('compiler.installGuide.windows', green('pacman -S --needed base-devel mingw-w64-ucrt-x86_64-toolchain')),
-      darwin: t('compiler.installGuide.macos', green('xcode-select --install')),
-      linux: t('compiler.installGuide.linux.debian', green('sudo apt update && sudo apt install build-essential')),
+      win32: 'pacman -S --needed base-devel mingw-w64-ucrt-x86_64-toolchain',
+      darwin: 'xcode-select --install',
+      linux: 'sudo apt update && sudo apt install build-essential',
     },
     go: {
-      default: `See ${green('https://golang.org/doc/install')}`,
+      default: 'https://golang.org/doc/install',
     },
     rust: {
-      default: `See ${green('https://www.rust-lang.org/tools/install')}`,
+      default: "curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh",
     },
     java: {
-      default: `Install a JDK (e.g., OpenJDK) for your system.`,
+      linux: 'sudo apt install default-jdk',
+      darwin: 'brew install openjdk',
+      default: 'https://adoptium.net/',
     },
   };
 
-  const langGuides = guides[lang.id] || {};
-  message += langGuides[platform] || langGuides['linux'] || langGuides['default'] || '';
+  const langCommands = installCommands[lang.id] || {};
+  const command = langCommands[platform] || langCommands['linux'] || langCommands['default'] || '';
+
+  let message = `\n${t('compiler.notFoundNew', lang.name)}\n\n`;
+  message += `${t('compiler.installHint')}\n\n`;
+
+  if (command.startsWith('http')) {
+    message += `${t('compiler.installGuideLink', green(command))}\n`;
+  } else {
+    message += `${t('compiler.copyCommand')}\n\n`;
+    message += `   ${green(command)}\n`;
+  }
 
   return message;
 }
