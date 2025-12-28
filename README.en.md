@@ -306,6 +306,36 @@ The `G` object provides a series of out-of-the-box data generation functions.
 | `G.isLeap(year)`      | Checks if a year is a leap year.
 | `G.date(options)`     | Generates a formatted random date string.
 
+#### 🆕 Number Theory
+
+| Function                     | Description                               | Example                                     |
+| ------------------------ | ------------------------------------------ | ---------------------------------------- |
+| `G.prime(min, max)`      | Generates a random prime in `[min, max]`. | `G.prime(10, 50)` -\> `37`               |
+| `G.coprime(min, max)`    | Generates a pair of coprime numbers.      | `G.coprime(1, 100)` -\> `[17, 23]`       |
+| `G.divisible(min, max, d)` | Generates a number divisible by `d`.    | `G.divisible(1, 100, 7)` -\> `49`        |
+
+#### 🆕 Intervals & Sequences
+
+| Function                     | Description                               | Example                                     |
+| ------------------------ | ------------------------------------------ | ---------------------------------------- |
+| `G.intervals(n, min, max, options?)` | Generates `n` intervals `[l, r]`. Supports sorted and overlapping options. | `G.intervals(3, 1, 100)` -\> `[[5,20],[30,45],[60,80]]` |
+| `G.brackets(n, options?)` | Generates `n` pairs of valid brackets.   | `G.brackets(3)` -\> `"(())()"` |
+
+#### 🆕 Geometry
+
+| Function                     | Description                               | Example                                     |
+| ------------------------ | ------------------------------------------ | ---------------------------------------- |
+| `G.points(n, min, max, options?)` | Generates `n` 2D points. Supports collinear option. | `G.points(5, -100, 100)` -\> `[[x1,y1], ...]` |
+| `G.convexHull(n, min, max)` | Generates `n` points forming a convex hull. | `G.convexHull(6, -100, 100)` -\> hull vertices |
+
+#### 🆕 Graph Enhancements
+
+| Type/Option               | Description                               | Example                                     |
+| ----------------------- | ------------------------------------------ | ---------------------------------------- |
+| `type: 'wheel'`         | Wheel graph: center connected to all outer vertices, outer forms a cycle. | `G.graph(6, 0, {type: 'wheel'})` |
+| `type: 'complete'`      | Complete graph: every pair of vertices has an edge. | `G.graph(5, 0, {type: 'complete'})` |
+| `negativeCycle: true`   | Generates graph with negative cycle (to break Bellman-Ford). | `G.graph(10, 15, {negativeCycle: true, weighted: [1,100]})` |
+
 ## 🧠 Smart Formatting: What You See Is What You Get
 
 We believe that problem setters should focus on **data logic**, not **output format**. Therefore, the return value API for the `generator` functions in `Maker` and `Checker` is designed to be extremely intuitive, following a "what you see is what you get" philosophy.

@@ -90,8 +90,10 @@ export interface DebugOptions {
  * - `tree`: 树（连通无环图）。
  * - `dag`: 有向无环图 (DAG)。
  * - `bipartite`: 二分图（顶点可被划分为两个互不相交的集合）。
+ * - `wheel`: [新增] 轮图（一个中心点连接所有外围顶点，外围形成环）。
+ * - `complete`: [新增] 完全图（每对顶点之间都有边）。
  */
-export type GraphType = 'simple' | 'tree' | 'dag' | 'bipartite';
+export type GraphType = 'simple' | 'tree' | 'dag' | 'bipartite' | 'wheel' | 'complete';
 
 /**
  * 边权配置选项。
@@ -116,6 +118,8 @@ export interface GraphOptions {
   noSelfLoops?: boolean;
   /** 顶点编号是否从 1 开始。 @default true */
   oneBased?: boolean;
+  /** [新增] 是否生成带负权环的图 (用于卡 Bellman-Ford)。 @default false */
+  negativeCycle?: boolean;
 }
 
 /**

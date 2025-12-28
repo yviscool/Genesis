@@ -128,17 +128,17 @@ describe('G (Generator) - 生成器测试', () => {
 
   describe('G.palindrome - 回文串生成', () => {
     test('应生成指定长度的有效奇数长度回文串', () => {
-        const len = 7;
-        const result = G.palindrome(len);
-        expect(result.length).toBe(len);
-        expect(result).toEqual(result.split('').reverse().join(''));
+      const len = 7;
+      const result = G.palindrome(len);
+      expect(result.length).toBe(len);
+      expect(result).toEqual(result.split('').reverse().join(''));
     });
 
     test('应生成指定长度的有效偶数长度回文串', () => {
-        const len = 8;
-        const result = G.palindrome(len);
-        expect(result.length).toBe(len);
-        expect(result).toEqual(result.split('').reverse().join(''));
+      const len = 8;
+      const result = G.palindrome(len);
+      expect(result.length).toBe(len);
+      expect(result).toEqual(result.split('').reverse().join(''));
     });
 
     test('对于长度 0 或更小应返回空字符串', () => {
@@ -190,7 +190,7 @@ describe('G (Generator) - 生成器测试', () => {
       const result = G.sorted(10, 1, 100);
       expect(result).toBeArrayOfSize(10);
       for (let i = 0; i < result.length - 1; i++) {
-        expect(result[i]).toBeLessThanOrEqual(result[i+1]);
+        expect(result[i]).toBeLessThanOrEqual(result[i + 1]);
       }
     });
 
@@ -198,7 +198,7 @@ describe('G (Generator) - 生成器测试', () => {
       const result = G.sorted(10, 1, 100, { order: 'strictlyAsc' });
       expect(result).toBeArrayOfSize(10);
       for (let i = 0; i < result.length - 1; i++) {
-        expect(result[i]).toBeLessThan(result[i+1]);
+        expect(result[i]).toBeLessThan(result[i + 1]);
       }
     });
 
@@ -206,7 +206,7 @@ describe('G (Generator) - 生成器测试', () => {
       const result = G.sorted(10, 1, 100, { order: 'desc' });
       expect(result).toBeArrayOfSize(10);
       for (let i = 0; i < result.length - 1; i++) {
-        expect(result[i]).toBeGreaterThanOrEqual(result[i+1]);
+        expect(result[i]).toBeGreaterThanOrEqual(result[i + 1]);
       }
     });
 
@@ -214,7 +214,7 @@ describe('G (Generator) - 生成器测试', () => {
       const result = G.sorted(10, 1, 100, { order: 'strictlyDesc' });
       expect(result).toBeArrayOfSize(10);
       for (let i = 0; i < result.length - 1; i++) {
-        expect(result[i]).toBeGreaterThan(result[i+1]);
+        expect(result[i]).toBeGreaterThan(result[i + 1]);
       }
     });
   });
@@ -229,7 +229,7 @@ describe('G (Generator) - 生成器测试', () => {
       expect(result).toBeArrayOfSize(count);
       const sortedResult = [...result].sort((a, b) => a - b);
       for (let i = 0; i < sortedResult.length - 1; i++) {
-        expect(sortedResult[i+1] - sortedResult[i]).toBeGreaterThanOrEqual(gap);
+        expect(sortedResult[i + 1] - sortedResult[i]).toBeGreaterThanOrEqual(gap);
       }
       result.forEach(num => {
         expect(num).toBeGreaterThanOrEqual(min);
@@ -318,13 +318,13 @@ describe('G (Generator) - 生成器测试', () => {
 
   describe('G.base.convert - 进制转换', () => {
     test('应正确在不同进制间转换', () => {
-        expect(G.base.convert('1010', 2, 10)).toBe('10');
-        expect(G.base.convert('F', 16, 10)).toBe('15');
-        expect(G.base.convert(255, 10, 16)).toBe('FF');
-        expect(G.base.convert('Z', 36, 10)).toBe('35');
-        expect(G.base.convert(10, 10, 2)).toBe('1010');
-        expect(G.base.convert(15, 10, 16)).toBe('F');
-        expect(G.base.convert(35, 10, 36)).toBe('Z');
+      expect(G.base.convert('1010', 2, 10)).toBe('10');
+      expect(G.base.convert('F', 16, 10)).toBe('15');
+      expect(G.base.convert(255, 10, 16)).toBe('FF');
+      expect(G.base.convert('Z', 36, 10)).toBe('35');
+      expect(G.base.convert(10, 10, 2)).toBe('1010');
+      expect(G.base.convert(15, 10, 16)).toBe('F');
+      expect(G.base.convert(35, 10, 36)).toBe('Z');
     });
 
     test('应处理 BigInt 输入', () => {
@@ -332,8 +332,8 @@ describe('G (Generator) - 生成器测试', () => {
     });
 
     test('对于非法输入字符应抛出错误', () => {
-        expect(() => G.base.convert('102', 2, 10)).toThrow('Input "102" contains invalid characters for base 2.');
-        expect(() => G.base.convert('G', 16, 10)).toThrow('Input "G" contains invalid characters for base 16.');
+      expect(() => G.base.convert('102', 2, 10)).toThrow('Input "102" contains invalid characters for base 2.');
+      expect(() => G.base.convert('G', 16, 10)).toThrow('Input "G" contains invalid characters for base 16.');
     });
 
     test('对于非法进制应抛出错误', () => {
@@ -418,14 +418,14 @@ describe('G (Generator) - 生成器测试', () => {
         degrees.set(u, (degrees.get(u) || 0) + 1);
         degrees.set(v, (degrees.get(v) || 0) + 1);
       });
-      
+
       let leafNodes = 0;
       let internalNodes = 0;
       for (const degree of degrees.values()) {
         if (degree === 1) leafNodes++;
         if (degree === 2) internalNodes++;
       }
-      
+
       expect(tree.length).toBe(n - 1);
       expect(leafNodes).toBe(2);
       expect(internalNodes).toBe(n - 2);
@@ -498,9 +498,9 @@ describe('G (Generator) - 生成器测试', () => {
       const n = 15;
       const m = 20;
       const graph = G.graph(n, m, { connected: true });
-      
+
       const adj = new Map<number, number[]>();
-      for(let i = 1; i <= n; i++) adj.set(i, []);
+      for (let i = 1; i <= n; i++) adj.set(i, []);
 
       graph.forEach(([u, v]) => {
         adj.get(u)?.push(v);
@@ -510,7 +510,7 @@ describe('G (Generator) - 生成器测试', () => {
       const visited = new Set<number>();
       const q = [1];
       visited.add(1);
-      while(q.length > 0) {
+      while (q.length > 0) {
         const u = q.shift()!;
         adj.get(u)?.forEach(v => {
           if (!visited.has(v)) {
@@ -519,7 +519,7 @@ describe('G (Generator) - 生成器测试', () => {
           }
         });
       }
-      
+
       expect(graph.length).toBe(m);
       expect(visited.size).toBe(n);
     });
@@ -528,10 +528,10 @@ describe('G (Generator) - 生成器测试', () => {
       const n = 10;
       const m = 15;
       const graph = G.graph(n, m, { type: 'dag', directed: true, oneBased: false });
-      
+
       const inDegree = new Array(n).fill(0);
       const adj = new Map<number, number[]>();
-      for(let i = 0; i < n; i++) adj.set(i, []);
+      for (let i = 0; i < n; i++) adj.set(i, []);
 
       graph.forEach(([u, v]) => {
         adj.get(u)?.push(v);
@@ -546,7 +546,7 @@ describe('G (Generator) - 生成器测试', () => {
       }
 
       let count = 0;
-      while(q.length > 0) {
+      while (q.length > 0) {
         const u = q.shift()!;
         count++;
         adj.get(u)?.forEach(v => {
@@ -566,7 +566,7 @@ describe('G (Generator) - 生成器测试', () => {
       const graph = G.graph(n, m, { type: 'bipartite', oneBased: false });
 
       const adj = new Map<number, number[]>();
-      for(let i = 0; i < n; i++) adj.set(i, []);
+      for (let i = 0; i < n; i++) adj.set(i, []);
       graph.forEach(([u, v]) => {
         adj.get(u)?.push(v);
         adj.get(v)?.push(u);
@@ -581,7 +581,7 @@ describe('G (Generator) - 生成器测试', () => {
         colors.set(startNode, 0);
 
         let head = 0;
-        while(head < q.length) {
+        while (head < q.length) {
           const [u, color] = q[head++]!;
           adj.get(u)?.forEach(v => {
             if (!colors.has(v)) {
@@ -605,87 +605,229 @@ describe('G (Generator) - 生成器测试', () => {
     });
 
     test('当边数超过 DAG 最大限制时应抛出错误', () => {
-        // DAG n=10 最大边数是 45
-        expect(() => G.graph(10, 46, { type: 'dag', directed: true })).toThrow(/can have at most 45 edges/);
+      // DAG n=10 最大边数是 45
+      expect(() => G.graph(10, 46, { type: 'dag', directed: true })).toThrow(/can have at most 45 edges/);
     });
 
     test('应正确处理二分图的最大边数限制', () => {
-        // n=10, 二分图 (无向) 最大边数是 5*5=25
-        expect(() => G.graph(10, 26, { type: 'bipartite', directed: false })).toThrow(/can have at most 25 edges/);
-        // n=10, 二分图 (有向) 最大边数是 2*5*5=50
-        expect(() => G.graph(10, 51, { type: 'bipartite', directed: true })).toThrow(/can have at most 50 edges/);
+      // n=10, 二分图 (无向) 最大边数是 5*5=25
+      expect(() => G.graph(10, 26, { type: 'bipartite', directed: false })).toThrow(/can have at most 25 edges/);
+      // n=10, 二分图 (有向) 最大边数是 2*5*5=50
+      expect(() => G.graph(10, 51, { type: 'bipartite', directed: true })).toThrow(/can have at most 50 edges/);
     });
 
     test('如果边数在范围内应始终成功生成二分图 (防止随机挂起)', () => {
-        // 之前的 bug: 划分可能是 1 vs 9，最大边数 9。请求 20 条边会挂起。
-        // 现在应确保划分足够平衡。
-        const n = 10;
-        const m = 20;
-        // 尝试多次以确保无不稳定的行为
-        for(let i=0; i<10; i++) {
-            const graph = G.graph(n, m, { type: 'bipartite' });
-            expect(graph.length).toBe(m);
-        }
+      // 之前的 bug: 划分可能是 1 vs 9，最大边数 9。请求 20 条边会挂起。
+      // 现在应确保划分足够平衡。
+      const n = 10;
+      const m = 20;
+      // 尝试多次以确保无不稳定的行为
+      for (let i = 0; i < 10; i++) {
+        const graph = G.graph(n, m, { type: 'bipartite' });
+        expect(graph.length).toBe(m);
+      }
     });
 
     test('应生成连通二分图', () => {
-        const n = 10;
-        const m = 15;
-        const graph = G.graph(n, m, { type: 'bipartite', connected: true, oneBased: false });
-        expect(graph.length).toBe(m);
+      const n = 10;
+      const m = 15;
+      const graph = G.graph(n, m, { type: 'bipartite', connected: true, oneBased: false });
+      expect(graph.length).toBe(m);
 
-        // 验证连通性
-        const adj = new Map<number, number[]>();
-        for(let i=0; i<n; i++) adj.set(i, []);
-        graph.forEach(([u, v]) => {
-            adj.get(u)?.push(v);
-            adj.get(v)?.push(u);
+      // 验证连通性
+      const adj = new Map<number, number[]>();
+      for (let i = 0; i < n; i++) adj.set(i, []);
+      graph.forEach(([u, v]) => {
+        adj.get(u)?.push(v);
+        adj.get(v)?.push(u);
+      });
+
+      const visited = new Set<number>();
+      const q = [0];
+      visited.add(0);
+      while (q.length > 0) {
+        const u = q.shift()!;
+        adj.get(u)?.forEach(v => {
+          if (!visited.has(v)) {
+            visited.add(v);
+            q.push(v);
+          }
         });
-
-        const visited = new Set<number>();
-        const q = [0];
-        visited.add(0);
-        while(q.length > 0) {
-            const u = q.shift()!;
-            adj.get(u)?.forEach(v => {
-                if(!visited.has(v)) {
-                    visited.add(v);
-                    q.push(v);
-                }
-            });
-        }
-        expect(visited.size).toBe(n);
+      }
+      expect(visited.size).toBe(n);
     });
 
     test('应生成连通 DAG', () => {
-        const n = 10;
-        const m = 15;
-        const graph = G.graph(n, m, { type: 'dag', connected: true, oneBased: false });
-        expect(graph.length).toBe(m);
+      const n = 10;
+      const m = 15;
+      const graph = G.graph(n, m, { type: 'dag', connected: true, oneBased: false });
+      expect(graph.length).toBe(m);
 
-        // 验证连通性 (检查弱连通性)
-        const adj = new Map<number, number[]>();
-        for(let i=0; i<n; i++) adj.set(i, []);
-        graph.forEach(([u, v]) => {
-            adj.get(u)?.push(v);
-            adj.get(v)?.push(u);
+      // 验证连通性 (检查弱连通性)
+      const adj = new Map<number, number[]>();
+      for (let i = 0; i < n; i++) adj.set(i, []);
+      graph.forEach(([u, v]) => {
+        adj.get(u)?.push(v);
+        adj.get(v)?.push(u);
+      });
+
+      const visited = new Set<number>();
+      const q = [0];
+      visited.add(0);
+      while (q.length > 0) {
+        const u = q.shift()!;
+        adj.get(u)?.forEach(v => {
+          if (!visited.has(v)) {
+            visited.add(v);
+            q.push(v);
+          }
         });
-
-        const visited = new Set<number>();
-        const q = [0];
-        visited.add(0);
-        while(q.length > 0) {
-            const u = q.shift()!;
-            adj.get(u)?.forEach(v => {
-                if(!visited.has(v)) {
-                    visited.add(v);
-                    q.push(v);
-                }
-            });
-        }
-        expect(visited.size).toBe(n);
+      }
+      expect(visited.size).toBe(n);
     });
 
+  });
+
+  // ============ 新功能测试 ============
+
+  describe('G.prime - 质数生成', () => {
+    test('应生成指定范围内的质数', () => {
+      const result = G.prime(10, 50);
+      expect(result).toBeTypeOf('number');
+      expect(result).toBeGreaterThanOrEqual(10);
+      expect(result).toBeLessThanOrEqual(50);
+      // 验证是质数
+      const isPrime = (n: number) => {
+        if (n < 2) return false;
+        for (let i = 2; i * i <= n; i++) {
+          if (n % i === 0) return false;
+        }
+        return true;
+      };
+      expect(isPrime(result)).toBe(true);
+    });
+
+    test('如果范围内没有质数应抛出错误', () => {
+      expect(() => G.prime(24, 28)).toThrow(/No prime numbers exist/);
+    });
+  });
+
+  describe('G.coprime - 互质数对生成', () => {
+    test('应生成互质数对', () => {
+      const [a, b] = G.coprime(1, 100);
+      expect(a).toBeTypeOf('number');
+      expect(b).toBeTypeOf('number');
+      expect(a).not.toBe(b);
+      // 验证互质
+      const gcd = (x: number, y: number): number => y === 0 ? x : gcd(y, x % y);
+      expect(gcd(a, b)).toBe(1);
+    });
+  });
+
+  describe('G.divisible - 可整除数生成', () => {
+    test('应生成能被指定数整除的数', () => {
+      const d = 7;
+      const result = G.divisible(1, 100, d);
+      expect(result).toBeTypeOf('number');
+      expect(result).toBeGreaterThanOrEqual(1);
+      expect(result).toBeLessThanOrEqual(100);
+      expect(result % d).toBe(0);
+    });
+
+    test('如果范围内没有可整除数应抛出错误', () => {
+      expect(() => G.divisible(1, 5, 7)).toThrow(/No numbers divisible by/);
+    });
+
+    test('除数为零应抛出错误', () => {
+      expect(() => G.divisible(1, 100, 0)).toThrow('Divisor cannot be zero.');
+    });
+  });
+
+  describe('G.brackets - 括号序列生成', () => {
+    test('应生成合法括号序列', () => {
+      const n = 5;
+      const result = G.brackets(n);
+      expect(result.length).toBe(n * 2);
+      // 验证括号匹配
+      let count = 0;
+      for (const c of result) {
+        if (c === '(') count++;
+        else if (c === ')') count--;
+        expect(count).toBeGreaterThanOrEqual(0);
+      }
+      expect(count).toBe(0);
+    });
+
+    test('应支持多种括号类型', () => {
+      const result = G.brackets(3, { types: '()[]' });
+      expect(result.length).toBe(6);
+      // 验证只包含指定类型
+      for (const c of result) {
+        expect('()[]').toContain(c);
+      }
+    });
+  });
+
+  describe('G.intervals - 区间列表生成', () => {
+    test('应生成指定数量的区间', () => {
+      const n = 5;
+      const result = G.intervals(n, 1, 100);
+      expect(result).toBeArrayOfSize(n);
+      result.forEach(([l, r]) => {
+        expect(l).toBeGreaterThanOrEqual(1);
+        expect(r).toBeLessThanOrEqual(100);
+        expect(l).toBeLessThanOrEqual(r);
+      });
+    });
+
+    test('应支持排序选项', () => {
+      const result = G.intervals(5, 1, 100, { sorted: true });
+      for (let i = 0; i < result.length - 1; i++) {
+        expect(result[i][0]).toBeLessThanOrEqual(result[i + 1][0]);
+      }
+    });
+  });
+
+  describe('G.convexHull - 凸包点生成', () => {
+    test('应生成指定数量的点', () => {
+      const n = 10;
+      const result = G.convexHull(n, -100, 100);
+      expect(result).toBeArrayOfSize(n);
+      result.forEach(([x, y]) => {
+        expect(x).toBeGreaterThanOrEqual(-100);
+        expect(x).toBeLessThanOrEqual(100);
+        expect(y).toBeGreaterThanOrEqual(-100);
+        expect(y).toBeLessThanOrEqual(100);
+      });
+    });
+  });
+
+  describe('G.graph - 新图类型', () => {
+    test('应生成轮图 (wheel)', () => {
+      const n = 6;
+      const graph = G.graph(n, 0, { type: 'wheel', oneBased: false });
+      // 轮图边数 = 2(n-1): n-1条轮辐 + n-1条外环
+      expect(graph.length).toBe(2 * (n - 1));
+    });
+
+    test('应生成完全图 (complete)', () => {
+      const n = 5;
+      const graph = G.graph(n, 0, { type: 'complete', oneBased: false });
+      // 完全图边数 = n(n-1)/2
+      expect(graph.length).toBe(n * (n - 1) / 2);
+    });
+
+    test('应生成带负权环的图', () => {
+      const graph = G.graph(10, 15, { negativeCycle: true, weighted: [1, 100] });
+      expect(graph.length).toBe(15);
+      // 检查存在负权边
+      const hasNegative = graph.some(e => e[2] < 0);
+      expect(hasNegative).toBe(true);
+    });
+
+    test('轮图顶点数小于4应抛出错误', () => {
+      expect(() => G.graph(3, 0, { type: 'wheel' })).toThrow(/at least 4 vertices/);
+    });
   });
 
   // G.debug 主要用于控制台日志，直接测试其输出较为复杂且易碎。

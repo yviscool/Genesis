@@ -41,5 +41,5 @@ export function createChecker(): GenesisChecker {
 }
 
 // 其他
-export { G } from './generator';
+export { G } from './generator/index';
 export type { GenesisConfig, CheckerConfig, CompareMode, WeightOption } from './types';
