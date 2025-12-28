@@ -15,8 +15,8 @@ import { t } from './i18n';
 // --- 常量 & 类型定义 ---
 // =============================================================================
 
-const TEMP_DIR = '.genesis';
-const CACHE_FILE = path.join(TEMP_DIR, 'cache.json');
+export const GENESIS_CACHE_DIR = '.genesis';
+const CACHE_FILE = path.join(GENESIS_CACHE_DIR, 'cache.json');
 
 interface CacheMetadata {
   [cacheKey: string]: {
@@ -163,7 +163,7 @@ async function getCompilationProfile(
   const baseFlags = defaultFlags[lang.id] || [];
   const finalFlags = [...baseFlags, ...userFlags];
 
-  await fs.mkdir(TEMP_DIR, { recursive: true });
+  await fs.mkdir(GENESIS_CACHE_DIR, { recursive: true });
   const sourceContent = await fs.readFile(sourceFile);
   const uniqueProfile = sourceContent.toString() + compiler + finalFlags.join('');
   const currentHash = crypto.createHash('sha256').update(uniqueProfile).digest('hex');
@@ -205,7 +205,7 @@ async function executeCompilation(
 
     if (lang.id === 'java') {
       // 对于 Java，编译到缓存目录，但不重命名 class 文件
-      const outputDir = path.join(TEMP_DIR, `${baseName}-${hashSuffix}`);
+      const outputDir = path.join(GENESIS_CACHE_DIR, `${baseName}-${hashSuffix}`);
       return {
         command: compiler,
         args: [...profile.flags, '-d', outputDir, sourceFile],
@@ -214,11 +214,11 @@ async function executeCompilation(
     }
 
     const exeSuffix = process.platform === 'win32' ? '.exe' : '';
-    const executablePath = path.join(TEMP_DIR, `${baseName}-${hashSuffix}${exeSuffix}`);
+    const executablePath = path.join(GENESIS_CACHE_DIR, `${baseName}-${hashSuffix}${exeSuffix}`);
     const args = [sourceFile, '-o', executablePath, ...profile.flags];
 
     if (lang.id === 'go') {
-        return { command: compiler, args: ['build', '-o', executablePath, sourceFile], executablePath };
+      return { command: compiler, args: ['build', '-o', executablePath, sourceFile], executablePath };
     }
 
     return { command: compiler, args, executablePath };

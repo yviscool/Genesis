@@ -38,15 +38,5 @@ export function compareOutputs(stdOut: string, myOut: string, mode: CompareMode)
   const stdLines = normalizeOutput(stdOut);
   const myLines = normalizeOutput(myOut);
 
-  if (stdLines.length !== myLines.length) {
-    return false;
-  }
-
-  for (let i = 0; i < stdLines.length; i++) {
-    if (stdLines[i] !== myLines[i]) {
-      return false;
-    }
-  }
-
-  return true;
+  return stdLines.length === myLines.length && stdLines.every((line, i) => line === myLines[i]);
 }

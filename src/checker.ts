@@ -169,23 +169,13 @@ export class GenesisChecker {
    * @param myOut 目标程序的输出或错误信息。
    */
   private async reportFailure(testNumber: number, type: string, input: string, stdOut: string, myOut: string): Promise<void> {
-    let typeMessage = '';
-    switch (type) {
-      case 'WA':
-        typeMessage = t('checker.wa');
-        break;
-      case 'RE':
-        typeMessage = t('checker.re');
-        break;
-      case 'TLE':
-        typeMessage = t('checker.tle');
-        break;
-      case 'RE_STD':
-        typeMessage = t('checker.re_std');
-        break;
-      default:
-        typeMessage = t('checker.unknownError');
-    }
+    const TYPE_MESSAGES: Record<string, string> = {
+      WA: t('checker.wa'),
+      RE: t('checker.re'),
+      TLE: t('checker.tle'),
+      RE_STD: t('checker.re_std'),
+    };
+    const typeMessage = TYPE_MESSAGES[type] ?? t('checker.unknownError');
 
     const errorMessage = `\n` +
       `[error] [${t('checker.failedAtTest', testNumber)}] ${type} (${typeMessage})\n` +

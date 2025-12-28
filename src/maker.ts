@@ -122,7 +122,7 @@ class GenesisMaker {
   private async prepareEnvironment(): Promise<boolean> {
     const cleanupOk = await this.cleanupOutputDirectory();
     if (!cleanupOk) return false;
-    
+
     await fs.mkdir(this.config.outputDir, { recursive: true });
 
     return true;
@@ -277,42 +277,5 @@ class GenesisMaker {
   }
 }
 
-// =============================================================================
-// --- 统一入口代理 (Proxy) ---
-// =============================================================================
-
-const handler: ProxyHandler<any> = {
-  /**
-   * Proxy 的 `get` 拦截器，实现了 "隐式工厂" 模式。
-   *
-   * 1. 当访问 `Maker` 的任何属性 (例如 `Maker.configure`) 时，此函数被触发。
-   * 2. 它会**立即创建一个新的 `GenesisMaker` 实例**。
-   * 3. 然后从该实例获取同名方法 (例如 `instance.configure`) 并返回。
-   * 4. 关键点：由于 `configure` 等方法返回 `this` (即新创建的 `instance`)，
-   *    后续的链式调用 (例如 `.case(...)`) 将在该 `instance` 上进行，
-   *    **不会**再次触发 Proxy 的 `get` 拦截器。
-   *
-   * 这种模式允许使用简洁的 API 调用 (`Maker.case(...)`)，同时确保每次调用链都
-   * 始于一个干净、独立的实例。
-   */
-  get(target, prop) {
-    const instance = new GenesisMaker();
-    const method = (instance as any)[prop];
-
-    if (typeof method === 'function') {
-      return method.bind(instance);
-    }
-    return Reflect.get(instance, prop);
-  },
-};
-
-// 1. 导出 GenesisMaker 类本身
+// 仅导出类本身，Proxy 逻辑已统一至 index.ts
 export { GenesisMaker };
-
-// 2. (可选) 提供一个清晰的工厂函数作为语法糖
-export function createMaker(): GenesisMaker {
-    return new GenesisMaker();
-}
-
-// 3. (推荐) 使用 Proxy 提供更灵活的统一入口点
-export const Maker = new Proxy({}, handler) as unknown as GenesisMaker;

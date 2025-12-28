@@ -94,6 +94,13 @@ export interface DebugOptions {
 export type GraphType = 'simple' | 'tree' | 'dag' | 'bipartite';
 
 /**
+ * 边权配置选项。
+ * - `true`: 随机生成 1 到 10^9 之间的权重。
+ * - `[min, max]`: 在指定范围内生成权重。
+ */
+export type WeightOption = boolean | [min: number, max: number];
+
+/**
  * `G.graph` 的配置选项。
  */
 export interface GraphOptions {
@@ -101,13 +108,8 @@ export interface GraphOptions {
   type?: GraphType;
   /** 是否为有向图。 @default false */
   directed?: boolean;
-  /** 
-   * 边是否带权。
-   * - `true`: 随机生成 1 到 1,000,000,000 之间的权重。
-   * - `[min, max]`: 在指定范围内生成权重。
-   * @default false
-   */
-  weighted?: boolean | [number, number];
+  /** 边权配置。 @default false */
+  weighted?: WeightOption;
   /** 是否保证图是连通的。 @default false */
   connected?: boolean;
   /** 是否禁止自环 (例如 u-u 的边)。 @default true */
@@ -130,13 +132,8 @@ export type TreeType = 'random' | 'path' | 'star';
 export interface TreeOptions {
   /** 树的结构类型。 @default 'random' */
   type?: TreeType;
-  /** 
-   * 边是否带权。
-   * - `true`: 随机生成 1 到 1,000,000,000 之间的权重。
-   * - `[min, max]`: 在指定范围内生成权重。
-   * @default false
-   */
-  weighted?: boolean | [number, number];
+  /** 边权配置。 @default false */
+  weighted?: WeightOption;
   /** 顶点编号是否从 1 开始。 @default true */
   oneBased?: boolean;
 }
