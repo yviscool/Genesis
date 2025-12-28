@@ -7,15 +7,15 @@
 
 ## ✨ Core Features
 
-*   **Declarative API**: Intuitively define data generation and checking with chained calls like `.case()` and `.run()`, making your code structure highly consistent with your logic.
-*   **Built-in Checker**: Automatically runs the standard and target solutions, performs high-fidelity output comparison (Diff), and quickly pinpoints `WA`/`TLE`.
-*   **Powerful Data Generator (`G`)**: Comes with a rich set of convenient generation functions (`G.int`, `G.permutation`, `G.matrix`, `G.even`, `G.tree`, `G.graph`, etc.) that cover 99% of basic data needs.
-*   **Intelligent Formatting**: You only need to return structured data (e.g., `[[n, m], grid]`), and Genesis will automatically handle spaces and newlines to generate compliant `.in` files. **It correctly handles both numeric matrices and string arrays for `grid`!**
-*   **Multi-language Support**: Native support for **C++, Go, Rust, Java, Python, Node.js**, and more. Just provide the source file, and Genesis handles the compilation and execution automatically.
-*   **Automatic Compilation & Caching**: Auto-detects required compilers (`g++`, `go`, `rustc`, etc.) and compiles your standard and tested solutions. An intelligent caching mechanism based on file content and compilation parameters avoids redundant compilations, significantly boosting efficiency.
-*   **High Performance**: Leverages Node.js's asynchronous nature and multi-core CPUs, allowing `Maker` to generate all test cases in parallel and `Checker` to perform high-speed solution checking.
-*   **CLI Tool**: Provides convenient command-line tools for project initialization, data generation, solution checking, and cleanup operations.
-*   **Cross-Platform**: Works seamlessly on Windows (MSYS2/MinGW), macOS, and Linux.
+* **Declarative API**: Intuitively define data generation and checking with chained calls like `.case()` and `.run()`, making your code structure highly consistent with your logic.
+* **Built-in Checker**: Automatically runs the standard and target solutions, performs high-fidelity output comparison (Diff), and quickly pinpoints `WA`/`TLE`.
+* **Powerful Data Generator (`G`)**: Comes with a rich set of convenient generation functions (`G.int`, `G.permutation`, `G.matrix`, `G.even`, `G.tree`, `G.graph`, etc.) that cover 99% of basic data needs.
+* **Intelligent Formatting**: You only need to return structured data (e.g., `[[n, m], grid]`), and Genesis will automatically handle spaces and newlines to generate compliant `.in` files. **It correctly handles both numeric matrices and string arrays for `grid`!**
+* **Multi-language Support**: Native support for **C++, Go, Rust, Java, Python, Node.js**, and more. Just provide the source file, and Genesis handles the compilation and execution automatically.
+* **Automatic Compilation & Caching**: Auto-detects required compilers (`g++`, `go`, `rustc`, etc.) and compiles your standard and tested solutions. An intelligent caching mechanism based on file content and compilation parameters avoids redundant compilations, significantly boosting efficiency.
+* **High Performance**: Leverages Node.js's asynchronous nature and multi-core CPUs, allowing `Maker` to generate all test cases in parallel and `Checker` to perform high-speed solution checking.
+* **CLI Tool**: Provides convenient command-line tools for project initialization, data generation, solution checking, and cleanup operations.
+* **Cross-Platform**: Works seamlessly on Windows (MSYS2/MinGW), macOS, and Linux.
 
 ## 🚀 Quick Start (Maker)
 
@@ -126,8 +126,8 @@ Let's use `Checker` to diff-test a Python program.
 
 **Prepare the files:**
 
-1.  `std.py` (A+B, **correct**)
-2.  `my_buggy.py` (A+B, **buggy**, doesn't handle large numbers)
+1. `std.py` (A+B, **correct**)
+2. `my_buggy.py` (A+B, **buggy**, doesn't handle large numbers)
 
 **Write `check.ts`:**
 
@@ -168,20 +168,20 @@ Checker
 
 When `.run(N)` is initiated, `Checker` will:
 
-1.  **Prepare**: Automatically prepare `std` and `target` for execution. For compiled languages like C++, Go, or Rust, this includes compilation and caching.
-2.  **Loop**: Start a **serial** loop for a maximum of `N` iterations.
-3.  **Generate**: In **each** iteration, call the function in `.gen()` to produce a new set of data.
-4.  **Execute**: Run the `std` and `target` programs separately, feeding the generated data as `stdin`.
-5.  **Judge**:
-    *   **TLE / RE**: If `target` times out or crashes (RE), stop immediately.
-    *   **WA (Wrong Answer)**: Call the high-fidelity differ to compare the `stdout` of `std` and `target`.
-6.  **Report**:
-    *   **PASSED**: Update the counter in the console and proceed to the next iteration.
-    *   **FAILED (WA/TLE/RE)**: **Stop immediately** and print a detailed failure report to the console (including input, standard output, and your output).
-    *   **Save Artifacts**: Automatically save the data that caused the failure to:
-        *   `_checker_fail.in`
-        *   `_checker_std.out`
-        *   `_checker_my.out`
+1. **Prepare**: Automatically prepare `std` and `target` for execution. For compiled languages like C++, Go, or Rust, this includes compilation and caching.
+2. **Loop**: Start a **serial** loop for a maximum of `N` iterations.
+3. **Generate**: In **each** iteration, call the function in `.gen()` to produce a new set of data.
+4. **Execute**: Run the `std` and `target` programs separately, feeding the generated data as `stdin`.
+5. **Judge**:
+    * **TLE / RE**: If `target` times out or crashes (RE), stop immediately.
+    * **WA (Wrong Answer)**: Call the high-fidelity differ to compare the `stdout` of `std` and `target`.
+6. **Report**:
+    * **PASSED**: Update the counter in the console and proceed to the next iteration.
+    * **FAILED (WA/TLE/RE)**: **Stop immediately** and print a detailed failure report to the console (including input, standard output, and your output).
+    * **Save Artifacts**: Automatically save the data that caused the failure to:
+        * `_checker_fail.in`
+        * `_checker_std.out`
+        * `_checker_my.out`
 
 -----
 
@@ -306,42 +306,67 @@ The `G` object provides a series of out-of-the-box data generation functions.
 
 We believe that problem setters should focus on **data logic**, not **output format**. Therefore, the return value API for the `generator` functions in `Maker` and `Checker` is designed to be extremely intuitive, following a "what you see is what you get" philosophy.
 
-**You just need to return an array whose structure is the "blueprint" for the `.in` file you want.**
+**You just need to return an array, where each element represents one line of the `.in` file.**
 
-**Core Rules**:
+### Core Rules (Unambiguous)
 
-1.  **1D Array or Single Value** (`[n, m]`, `100`) -> **Single Line** (elements separated by spaces).
-2.  **2D Array/Matrix** (`[[1,0], [0,1]]`) -> **Multiple Lines** (each row is formatted automatically).
-3.  **1D Array of Strings** (`['.##.', '..#.']`) -> **Multiple Lines** (each string is a separate line).
+```
+return [element1, element2, ..., elementN]
+       ↓          ↓              ↓
+       line1      line2          lineN
+```
 
-**Example: Both common Grid formats are now supported!**
+Conversion rules for each element:
+
+| Element Type | Conversion Rule | Example | Output Line |
+|-------------|-----------------|---------|-------------|
+| Single value (`number`, `string`, `boolean`) | Convert to string directly | `42` | `42` |
+| 1D Array | Join with spaces | `[1, 2, 3]` | `1 2 3` |
+| 2D Array | Expand to multiple lines | `[[1,2], [3,4]]` | `1 2`<br>`3 4` |
+
+### Examples
 
 ```typescript
-// --- Method 1: Return a numeric matrix directly (Recommended, more concise) ---
-.case('Number Matrix', () => {
-  const n = 3, m = 4;
-  // G.matrix returns a numeric matrix, e.g., [[0,1,0,1], [1,...], ...]
-  const grid = G.matrix(n, m, () => G.int(0, 1));
+// Scenario 1: Basic A+B input
+return [
+  [a, b]       // → "1 2" (one line with two numbers)
+]
 
-  // Return it directly! Genesis will intelligently format each row of the grid matrix.
-  return [
-    [n, m], // -> "3 4"
-    grid    // -> "0 1 0 1\n1 1 0 0\n0 0 1 1"
-  ];
-})
+// Scenario 2: Matrix with dimensions
+return [
+  [n, m],      // → "3 4" (matrix dimensions)
+  grid         // grid = [[0,1,0,1], [1,0,1,0], [0,0,1,1]] → expands to 3 lines
+]
+// Output:
+// 3 4
+// 0 1 0 1
+// 1 0 1 0
+// 0 0 1 1
 
-// --- Method 2: Return an array of strings (Also supported) ---
-.case('String Array', () => {
-    const n = 2, m = 5;
-    // Manually process each row of the grid into a string
-    const grid = G.matrix(n, m, () => G.sample(['.', '#'], 1)[0])
-                 .map(row => row.join('')); // grid -> ['.##.#', '#..##']
+// Scenario 3: Character grid
+return [
+  [n, m],      // → "3 4"
+  '.##.',      // strings become individual lines
+  '#..#',
+  '####'
+]
+// Output:
+// 3 4
+// .##.
+// #..#
+// ####
 
-    return [
-        [n, m], // -> "2 5"
-        grid    // -> ".##.#\n#..##"
-    ];
-})
+// Scenario 4: Multiple independent values
+return [1, 2, 3]  // → three lines, one value each
+// Output:
+// 1
+// 2
+// 3
+
+// Scenario 5: One line with multiple numbers
+return [[1, 2, 3]]  // → one line with three numbers
+// Output:
+// 1 2 3
 ```
 
 This powerful and simple model covers the input formats of the vast majority of competitive programming problems, allowing you to think and write code in the most natural way.

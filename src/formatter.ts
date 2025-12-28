@@ -1,38 +1,63 @@
 // src/formatter.ts
 
 /**
- * 格式化任意数据为字符串。
- * 用于将生成器产生的复杂对象（数组、矩阵等）转换为可用于输入的文本格式。
+ * 格式化返回值为输入文件内容。
+ * 
+ * ## 核心规则（无歧义版）
+ * 
+ * 顶层数组的每个元素代表一行：
+ * ```
+ * return [元素1, 元素2, ..., 元素N]
+ *        ↓       ↓           ↓
+ *        行1     行2         行N
+ * ```
+ * 
+ * 每个元素的转换规则：
+ * - 单值 (number/string/boolean) → 直接转字符串
+ * - 一维数组 → 空格拼接为一行
+ * - 二维数组 → 展开为多行（每个子数组空格拼接）
+ * 
+ * ## 示例
+ * 
+ * ```typescript
+ * return [5, 3, [1, 2, 3]]     // → "5\n3\n1 2 3"
+ * return [[n, m], grid]        // grid 是二维数组，会展开
+ * return [[1,2,3]]             // → "1 2 3" (一行三个数)
+ * return [1, 2, 3]             // → "1\n2\n3" (三行)
+ * return ['.##.', '#..#']      // → ".##.\n#..#" (两行字符串)
+ * ```
  *
- * @param data - 要格式化的原始数据。
- * @returns {string} - 格式化后的字符串。
+ * @param data - 生成器函数的返回值
+ * @returns 格式化后的字符串，可直接写入 .in 文件
  */
 export function formatData(data: any): string {
-  if (data === null || data === undefined) {
-    return '';
+  // 非数组：直接转字符串（边界情况）
+  if (!Array.isArray(data)) {
+    return data == null ? '' : String(data);
   }
 
-  // 1. 数组处理
-  if (Array.isArray(data)) {
-    // 1.1 二维数组 (矩阵)
-    if (data.length > 0 && Array.isArray(data[0])) {
-      return data.map(row => (row as any[]).join(' ')).join('\n');
+  const lines: string[] = [];
+
+  for (const element of data) {
+    if (element == null) {
+      // null/undefined → 空行
+      lines.push('');
+    } else if (Array.isArray(element)) {
+      // 检查是否为二维数组
+      if (element.length > 0 && Array.isArray(element[0])) {
+        // 二维数组：展开为多行
+        for (const row of element) {
+          lines.push((row as any[]).join(' '));
+        }
+      } else {
+        // 一维数组：空格拼接为一行
+        lines.push(element.join(' '));
+      }
+    } else {
+      // 单值：直接转字符串
+      lines.push(String(element));
     }
-    // 1.2 一维数组
-    return data.join(' ');
   }
 
-  // 2. 对象处理 (尝试转换为 JSON 或 toString)
-  if (typeof data === 'object') {
-    // 简单的对象通常不是合法的算法题输入，但在某些特殊情况下可能需要。
-    // 这里我们简单地调用 toString，除非它就是 [object Object]
-    const str = data.toString();
-    if (str === '[object Object]') {
-        return JSON.stringify(data);
-    }
-    return str;
-  }
-
-  // 3. 基础类型 (number, string, boolean 等)
-  return String(data);
+  return lines.join('\n');
 }

@@ -122,7 +122,7 @@ export class GenesisChecker {
         stdOutput = stdout;
       } catch (error) {
         spinner.fail(t('checker.stdCrashed', i));
-        await this.reportFailure(i, 'RE_STD', formattedInput, (error as ExecaError).stderr || '', '');
+        await this.reportFailure(i, 'RE_STD', formattedInput, String((error as ExecaError).stderr || ''), '');
         return;
       }
 
@@ -147,7 +147,7 @@ export class GenesisChecker {
           await this.reportFailure(i, 'TLE', formattedInput, stdOutput, '[Time Limit Exceeded]');
         } else {
           spinner.fail(t('checker.runtimeError', i));
-          await this.reportFailure(i, 'RE', formattedInput, stdOutput, execaError.stderr || '[No stderr]');
+          await this.reportFailure(i, 'RE', formattedInput, stdOutput, String(execaError.stderr || '[No stderr]'));
         }
         return;
       }
