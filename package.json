@@ -21,10 +21,10 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/yviscool/Genesis"
+    "url": "git+https://github.com/yviscool/Genesis.git"
   },
   "bin": {
-    "genesis": "./dist/cli.js"
+    "genesis": "dist/cli.js"
   },
   "module": "./dist/index.mjs",
   "main": "dist/index.js",

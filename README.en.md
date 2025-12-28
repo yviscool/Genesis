@@ -14,8 +14,12 @@
 * **Multi-language Support**: Native support for **C++, Go, Rust, Java, Python, Node.js**, and more. Just provide the source file, and Genesis handles the compilation and execution automatically.
 * **Automatic Compilation & Caching**: Auto-detects required compilers (`g++`, `go`, `rustc`, etc.) and compiles your standard and tested solutions. An intelligent caching mechanism based on file content and compilation parameters avoids redundant compilations, significantly boosting efficiency.
 * **High Performance**: Leverages Node.js's asynchronous nature and multi-core CPUs, allowing `Maker` to generate all test cases in parallel and `Checker` to perform high-speed solution checking.
-* **CLI Tool**: Provides convenient command-line tools for project initialization, data generation, solution checking, and cleanup operations.
+* **CLI Tool**: Provides convenient command-line tools with **interactive initialization wizard**, data generation, solution checking, and cleanup.
 * **Cross-Platform**: Works seamlessly on Windows (MSYS2/MinGW), macOS, and Linux.
+* **🆕 Colorful Diff Output**: Highlights differences line-by-line in red/green for WA cases.
+* **🆕 Runtime Error Diagnosis**: Automatically detects SIGSEGV/SIGFPE signals with human-readable explanations.
+* **🆕 Beautiful Progress Bar**: Shows speed (tests/s) and ETA.
+* **🆕 Continue Mode**: `.continue()` collects all failures before reporting.
 
 ## 🚀 Quick Start (Maker)
 
