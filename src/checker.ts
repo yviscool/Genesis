@@ -17,10 +17,6 @@ import { formatRuntimeError, getSignalFromExitCode } from './error-formatter';
 // --- 常量 & 默认值 ---
 // =============================================================================
 
-const DEFAULTS: Required<Omit<CheckerConfig, 'std' | 'target' | 'compiler' | 'compilerFlags'>> = {
-  compareMode: 'normalized',
-};
-
 const FAIL_ARTIFACTS = {
   in: '_checker_fail.in',
   std: '_checker_std.out',
@@ -36,19 +32,23 @@ interface FailureRecord {
   myOut: string;
 }
 
+// 内部配置类型：std 和 target 可选，用于表示"未初始化"状态
+type InternalCheckerConfig = Partial<Pick<CheckerConfig, 'std' | 'target'>> &
+  Omit<CheckerConfig, 'std' | 'target'> &
+{ compareMode: CompareMode };
+
 // =============================================================================
 // --- 核心实现类 ---
 // =============================================================================
 
 export class GenesisChecker {
-  private config: CheckerConfig & { compareMode: CompareMode };
+  private config: InternalCheckerConfig;
   private generator: (() => any) | null = null;
   private timeoutMs: number = 5000; // 默认超时时间: 5s
   private continueMode: boolean = false; // 继续模式：收集所有失败
 
   constructor() {
-    // @ts-expect-error - std 和 target 是必需的，将在 configure 中设置
-    this.config = { ...DEFAULTS };
+    this.config = { compareMode: 'normalized' };
   }
 
   // ---------------------------------------------------------------------------
@@ -113,7 +113,17 @@ export class GenesisChecker {
       return;
     }
 
-    const { std, target, ...compilerConfig } = this.config;
+    // 类型守卫：确保 std 和 target 已配置
+    const { std, target } = this.config;
+    if (!std || !target) {
+      consola.error(t('checker.missingStdOrTarget'));
+      return;
+    }
+
+    const compilerConfig = {
+      compiler: this.config.compiler,
+      compilerFlags: this.config.compilerFlags,
+    };
 
     // --- 准备执行环境 ---
     const stdExec = await prepareForExecution(std, compilerConfig);

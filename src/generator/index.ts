@@ -1,115 +1,89 @@
 // src/generator/index.ts
-// Genesis 数据生成器 — 模块组装入口
-// 真正的模块化设计：从各独立模块导入并组装
+// Genesis 数据生成器 — 简洁的模块组装入口
+// 静态导出设计：直接从各模块导入，无需工厂函数
 
 import type { IGenerator } from './types';
 
-// 导入核心和各功能模块
-import { createCore } from './core';
-import { createNumberGenerators } from './numbers';
-import { createStringGenerators, CHARSET } from './strings';
-import { createArrayGenerators } from './arrays';
-import { createDateTimeGenerators } from './datetime';
-import { createBaseGenerators } from './base';
-import { createGeometryGenerators } from './geometry';
-import { createGraphGenerators } from './graphs';
-import { createDebug } from './debug';
+// 直接导入各模块的静态导出
+import * as core from './core';
+import * as numbers from './numbers';
+import * as strings from './strings';
+import * as arrays from './arrays';
+import * as datetime from './datetime';
+import * as geometry from './geometry';
+import * as graphs from './graphs';
+import { base } from './base';
+import { debug } from './debug';
+import { CHARSET } from './strings';
 
 /**
- * 组装 G 对象 — Genesis 数据生成器
+ * G 对象 — Genesis 数据生成器单例
  * 
- * 架构设计:
- * ┌─────────────────────────────────────────────────────────┐
- * │                       G (IGenerator)                     │
- * ├─────────────────────────────────────────────────────────┤
- * │  ┌───────┐  ┌─────────┐  ┌────────┐  ┌──────────┐       │
- * │  │numbers│  │ strings │  │ arrays │  │  graphs  │       │
- * │  └───┬───┘  └────┬────┘  └───┬────┘  └────┬─────┘       │
- * │      │           │           │            │              │
- * │  ┌───┴───────────┴───────────┴────────────┴───┐         │
- * │  │                   core                      │         │
- * │  │   (int, shuffle, sample - 最底层函数)       │         │
- * │  └────────────────────────────────────────────┘         │
- * └─────────────────────────────────────────────────────────┘
+ * 静态导出架构：
+ * - 所有模块直接导出函数
+ * - 模块间通过 import * as xxx 相互引用
+ * - 无工厂函数，无闭包，代码简洁
  */
-function createGenerator(): IGenerator {
-    // 1. 创建核心基础函数
-    const core = createCore();
+export const G: IGenerator = {
+    // 字符集常量
+    CHARSET,
 
-    // 2. 创建各功能模块 (按依赖顺序)
-    const numbers = createNumberGenerators(core);
-    const strings = createStringGenerators(core);
-    const arrays = createArrayGenerators(core, numbers);
-    const datetime = createDateTimeGenerators(core);
-    const base = createBaseGenerators(core, strings);
-    const geometry = createGeometryGenerators(core, numbers);
-    const graphs = createGraphGenerators(core, arrays);
-    const debug = createDebug();
+    // === 数值生成 ===
+    int: numbers.int,
+    ints: numbers.ints,
+    distinctInts: numbers.distinctInts,
+    float: numbers.float,
+    even: numbers.even,
+    odd: numbers.odd,
+    prime: numbers.prime,
+    coprime: numbers.coprime,
+    divisible: numbers.divisible,
+    sequence: numbers.sequence,
 
-    // 3. 组装成完整的 G 对象
-    const G: IGenerator = {
-        // 字符集常量
-        CHARSET,
+    // === 字符串生成 ===
+    string: strings.string,
+    palindrome: strings.palindrome,
+    word: strings.word,
+    words: strings.words,
+    brackets: strings.brackets,
 
-        // === 数值生成 (from numbers) ===
-        int: numbers.int,
-        ints: numbers.ints,
-        distinctInts: numbers.distinctInts,
-        float: numbers.float,
-        even: numbers.even,
-        odd: numbers.odd,
-        prime: numbers.prime,
-        coprime: numbers.coprime,
-        divisible: numbers.divisible,
+    // === 数组/矩阵 ===
+    array: arrays.array,
+    sorted: arrays.sorted,
+    sparse: arrays.sparse,
+    partition: arrays.partition,
+    matrix: arrays.matrix,
+    grid01: arrays.grid01,
+    maze: arrays.maze,
+    intervals: arrays.intervals,
+    permutation: arrays.permutation,
+    chunk: arrays.chunk,
 
-        // === 字符串生成 (from strings) ===
-        string: strings.string,
-        palindrome: strings.palindrome,
-        word: strings.word,
-        words: strings.words,
-        brackets: strings.brackets,
+    // === 排列/采样 ===
+    shuffle: core.shuffle,
+    sample: core.sample,
 
-        // === 数组/矩阵 (from arrays) ===
-        array: arrays.array,
-        sorted: arrays.sorted,
-        sparse: arrays.sparse,
-        partition: arrays.partition,
-        matrix: arrays.matrix,
-        grid01: arrays.grid01,
-        maze: arrays.maze,
-        intervals: arrays.intervals,
-        permutation: arrays.permutation,
-        chunk: arrays.chunk,
+    // === 图论 ===
+    tree: graphs.tree,
+    graph: graphs.graph,
+    binaryTree: graphs.binaryTree,
 
-        // === 排列/采样 (from core) ===
-        shuffle: core.shuffle,
-        sample: core.sample,
+    // === 几何 ===
+    points: geometry.points,
+    convexHull: geometry.convexHull,
+    polygon: geometry.polygon,
 
-        // === 图论 (from graphs) ===
-        tree: graphs.tree,
-        graph: graphs.graph,
+    // === 日期 ===
+    isLeap: datetime.isLeap,
+    year: datetime.year,
+    date: datetime.date,
 
-        // === 几何 (from geometry) ===
-        points: geometry.points,
-        convexHull: geometry.convexHull,
+    // === 进制 ===
+    base,
 
-        // === 日期 (from datetime) ===
-        isLeap: datetime.isLeap,
-        year: datetime.year,
-        date: datetime.date,
-
-        // === 进制 (from base) ===
-        base,
-
-        // === 调试 (from debug) ===
-        debug,
-    };
-
-    return G;
-}
-
-// 创建并导出单例
-export const G = createGenerator();
+    // === 调试 ===
+    debug,
+};
 
 // 导出类型
 export type { IGenerator } from './types';

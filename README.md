@@ -315,6 +315,7 @@ Maker.configure({
 | `G.prime(min, max)`      | 生成 `[min, max]` 范围内的随机质数。 | `G.prime(10, 50)` -\> `37`               |
 | `G.coprime(min, max)`    | 生成一对互质的随机数。             | `G.coprime(1, 100)` -\> `[17, 23]`       |
 | `G.divisible(min, max, d)` | 生成能被 `d` 整除的随机数。        | `G.divisible(1, 100, 7)` -\> `49`        |
+| `G.sequence(options)`    | 生成数列（等差/等比/斐波那契/自定义递推）。 | `G.sequence({type: 'fibonacci', count: 8})` -\> `[1,1,2,3,5,8,13,21]` |
 
 #### 🆕 区间与序列 (Intervals & Sequences)
 
@@ -329,6 +330,7 @@ Maker.configure({
 | ------------------------ | ---------------------------------- | ---------------------------------------- |
 | `G.points(n, min, max, options?)` | 生成 `n` 个二维点坐标。支持共线等选项。 | `G.points(5, -100, 100)` -\> `[[x1,y1], ...]` |
 | `G.convexHull(n, min, max)` | 生成 `n` 个构成凸包的点。          | `G.convexHull(6, -100, 100)` -\> 凸包顶点 |
+| `G.polygon(n, min, max)` | 生成 `n` 个顶点的简单多边形（无自交）。 | `G.polygon(5, -100, 100)` -\> 多边形顶点 |
 
 #### 🆕 图论增强 (Graph Enhancements)
 
@@ -337,6 +339,23 @@ Maker.configure({
 | `type: 'wheel'`         | 轮图：中心连接外围，外围成环。      | `G.graph(6, 0, {type: 'wheel'})` |
 | `type: 'complete'`      | 完全图：每对顶点间都有边。          | `G.graph(5, 0, {type: 'complete'})` |
 | `negativeCycle: true`   | 生成带负权环的图 (卡 Bellman-Ford)。 | `G.graph(10, 15, {negativeCycle: true, weighted: [1,100]})` |
+
+#### 🆕 二叉树 (Binary Trees)
+
+| 函数                     | 描述                               | 示例                                     |
+| ------------------------ | ---------------------------------- | ---------------------------------------- |
+| `G.binaryTree(n, options?)` | 生成 `n` 节点的二叉树。返回 `{edges, root}`。 | `G.binaryTree(7, {type: 'complete'})` |
+
+**支持的类型：**
+* `random`：随机二叉树（默认）
+* `complete`：完全二叉树
+* `skewed`：倾斜二叉树（链状）
+
+#### 🆕 调试选项 (Debug Options)
+
+| 选项                     | 描述                               | 示例                                     |
+| ------------------------ | ---------------------------------- | ---------------------------------------- |
+| `colors: false`          | 禁用彩色输出（适用于 CI 环境）。   | `G.debug(data, {colors: false})` |
 
 ## 🧠 智能格式化：所见即所得
 

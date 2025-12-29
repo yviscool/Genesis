@@ -1,7 +1,8 @@
 // src/generator/types.ts
 // Generator 接口定义
 
-import type { DebugOptions, TreeOptions, GraphOptions } from '../types';
+import type { DebugOptions, TreeOptions, GraphOptions, BinaryTreeOptions } from '../types';
+import type { SequenceOptions } from './numbers';
 
 /**
  * 定义 Genesis 数据生成器 (G) 的完整接口。
@@ -47,6 +48,9 @@ export interface IGenerator {
 
     /** [新增] 生成能被 d 整除的随机数 */
     divisible(min: number, max: number, d: number): number;
+
+    /** [新增] 生成数列（等差/等比/斐波那契/自定义递推） */
+    sequence(options: SequenceOptions): number[];
 
     // ============ 字符串生成 ============
 
@@ -126,6 +130,12 @@ export interface IGenerator {
 
     /** [新增] 生成凸包上的点 */
     convexHull(n: number, minVal: number, maxVal: number): number[][];
+
+    /** [新增] 生成简单多边形（无自交） */
+    polygon(n: number, minVal: number, maxVal: number): number[][];
+
+    /** [新增] 生成二叉树 */
+    binaryTree(n: number, options?: BinaryTreeOptions): { edges: number[][]; root: number };
 
     // ============ 日期 ============
 

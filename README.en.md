@@ -313,6 +313,7 @@ The `G` object provides a series of out-of-the-box data generation functions.
 | `G.prime(min, max)`      | Generates a random prime in `[min, max]`. | `G.prime(10, 50)` -\> `37`               |
 | `G.coprime(min, max)`    | Generates a pair of coprime numbers.      | `G.coprime(1, 100)` -\> `[17, 23]`       |
 | `G.divisible(min, max, d)` | Generates a number divisible by `d`.    | `G.divisible(1, 100, 7)` -\> `49`        |
+| `G.sequence(options)`    | Generates sequences (arithmetic/geometric/fibonacci/custom). | `G.sequence({type: 'fibonacci', count: 8})` -\> `[1,1,2,3,5,8,13,21]` |
 
 #### 🆕 Intervals & Sequences
 
@@ -327,6 +328,7 @@ The `G` object provides a series of out-of-the-box data generation functions.
 | ------------------------ | ------------------------------------------ | ---------------------------------------- |
 | `G.points(n, min, max, options?)` | Generates `n` 2D points. Supports collinear option. | `G.points(5, -100, 100)` -\> `[[x1,y1], ...]` |
 | `G.convexHull(n, min, max)` | Generates `n` points forming a convex hull. | `G.convexHull(6, -100, 100)` -\> hull vertices |
+| `G.polygon(n, min, max)` | Generates a simple polygon with `n` vertices (non-self-intersecting). | `G.polygon(5, -100, 100)` -\> polygon vertices |
 
 #### 🆕 Graph Enhancements
 
@@ -335,6 +337,23 @@ The `G` object provides a series of out-of-the-box data generation functions.
 | `type: 'wheel'`         | Wheel graph: center connected to all outer vertices, outer forms a cycle. | `G.graph(6, 0, {type: 'wheel'})` |
 | `type: 'complete'`      | Complete graph: every pair of vertices has an edge. | `G.graph(5, 0, {type: 'complete'})` |
 | `negativeCycle: true`   | Generates graph with negative cycle (to break Bellman-Ford). | `G.graph(10, 15, {negativeCycle: true, weighted: [1,100]})` |
+
+#### 🆕 Binary Trees
+
+| Function                     | Description                               | Example                                     |
+| ------------------------ | ------------------------------------------ | ---------------------------------------- |
+| `G.binaryTree(n, options?)` | Generates a binary tree with `n` nodes. Returns `{edges, root}`. | `G.binaryTree(7, {type: 'complete'})` |
+
+**Supported types:**
+* `random`: Random binary tree (default)
+* `complete`: Complete binary tree
+* `skewed`: Skewed binary tree (chain-like)
+
+#### 🆕 Debug Options
+
+| Option                     | Description                               | Example                                     |
+| ------------------------ | ------------------------------------------ | ---------------------------------------- |
+| `colors: false`          | Disable colored output (for CI environments). | `G.debug(data, {colors: false})` |
 
 ## 🧠 Smart Formatting: What You See Is What You Get
 

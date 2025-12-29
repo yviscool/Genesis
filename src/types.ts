@@ -82,6 +82,11 @@ export interface DebugOptions {
    * @default 50
    */
   truncate?: number;
+  /**
+   * 是否启用颜色输出。设为 false 可禁用（适用于 CI 环境）。
+   * @default true
+   */
+  colors?: boolean;
 }
 
 /**
@@ -138,6 +143,24 @@ export interface TreeOptions {
   type?: TreeType;
   /** 边权配置。 @default false */
   weighted?: WeightOption;
+  /** 顶点编号是否从 1 开始。 @default true */
+  oneBased?: boolean;
+}
+
+/**
+ * 二叉树的结构类型。
+ * - `random`: 随机二叉树。
+ * - `complete`: 完全二叉树。
+ * - `skewed`: 倾斜二叉树（链状）。
+ */
+export type BinaryTreeType = 'random' | 'complete' | 'skewed';
+
+/**
+ * `G.binaryTree` 的配置选项。
+ */
+export interface BinaryTreeOptions {
+  /** 二叉树的结构类型。 @default 'random' */
+  type?: BinaryTreeType;
   /** 顶点编号是否从 1 开始。 @default true */
   oneBased?: boolean;
 }

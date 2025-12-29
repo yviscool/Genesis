@@ -43,11 +43,18 @@ export function formatData(data: any): string {
       // null/undefined → 空行
       lines.push('');
     } else if (Array.isArray(element)) {
-      // 检查是否为二维数组
-      if (element.length > 0 && Array.isArray(element[0])) {
-        // 二维数组：展开为多行
+      // 检查是否为二维数组：遍历检查是否有任意子元素是数组
+      const is2DArray = element.some(sub => Array.isArray(sub));
+      if (is2DArray) {
+        // 二维数组：展开为多行，安全处理稀疏数组
         for (const row of element) {
-          lines.push((row as any[]).join(' '));
+          if (Array.isArray(row)) {
+            lines.push(row.join(' '));
+          } else if (row != null) {
+            lines.push(String(row));
+          } else {
+            lines.push('');
+          }
         }
       } else {
         // 一维数组：空格拼接为一行

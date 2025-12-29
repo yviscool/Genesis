@@ -830,7 +830,98 @@ describe('G (Generator) - 生成器测试', () => {
     });
   });
 
+  describe('G.sequence - 数列生成', () => {
+    test('应生成等差数列', () => {
+      const result = G.sequence({ type: 'arithmetic', start: 1, diff: 2, count: 5 });
+      expect(result).toEqual([1, 3, 5, 7, 9]);
+    });
+
+    test('应生成等比数列', () => {
+      const result = G.sequence({ type: 'geometric', start: 2, ratio: 3, count: 4 });
+      expect(result).toEqual([2, 6, 18, 54]);
+    });
+
+    test('应生成斐波那契数列', () => {
+      const result = G.sequence({ type: 'fibonacci', count: 8 });
+      expect(result).toEqual([1, 1, 2, 3, 5, 8, 13, 21]);
+    });
+
+    test('应生成自定义初值的斐波那契数列', () => {
+      const result = G.sequence({ type: 'fibonacci', count: 5, first: 2, second: 3 });
+      expect(result).toEqual([2, 3, 5, 8, 13]);
+    });
+
+    test('应生成自定义递推数列', () => {
+      // a[n] = a[n-1] * 2 + 1
+      const result = G.sequence({
+        type: 'custom',
+        init: [1],
+        fn: (prev) => prev[prev.length - 1] * 2 + 1,
+        count: 5
+      });
+      expect(result).toEqual([1, 3, 7, 15, 31]);
+    });
+
+    test('边界：斐波那契 count=0 应返回空数组', () => {
+      expect(G.sequence({ type: 'fibonacci', count: 0 })).toEqual([]);
+    });
+
+    test('边界：斐波那契 count=1 应返回只有首项', () => {
+      expect(G.sequence({ type: 'fibonacci', count: 1 })).toEqual([1]);
+    });
+  });
+
+  describe('G.polygon - 简单多边形生成', () => {
+    test('应生成 n 个顶点的多边形', () => {
+      const n = 5;
+      const result = G.polygon(n, -100, 100);
+      expect(result).toBeArrayOfSize(n);
+      result.forEach(([x, y]) => {
+        expect(x).toBeGreaterThanOrEqual(-100);
+        expect(x).toBeLessThanOrEqual(100);
+        expect(y).toBeGreaterThanOrEqual(-100);
+        expect(y).toBeLessThanOrEqual(100);
+      });
+    });
+
+    test('n < 3 应返回点列表', () => {
+      expect(G.polygon(2, 0, 10).length).toBe(2);
+      expect(G.polygon(1, 0, 10).length).toBe(1);
+    });
+  });
+
+  describe('G.binaryTree - 二叉树生成', () => {
+    test('应生成随机二叉树', () => {
+      const n = 10;
+      const { edges, root } = G.binaryTree(n);
+      expect(edges.length).toBe(n - 1);
+      expect(root).toBe(1); // 默认 oneBased
+    });
+
+    test('应生成完全二叉树', () => {
+      const n = 7;
+      const { edges, root } = G.binaryTree(n, { type: 'complete', oneBased: false });
+      expect(edges.length).toBe(n - 1);
+      expect(root).toBe(0);
+      // 完全二叉树的边数 = n - 1
+    });
+
+    test('应生成倾斜二叉树', () => {
+      const n = 5;
+      const { edges, root } = G.binaryTree(n, { type: 'skewed' });
+      expect(edges.length).toBe(n - 1);
+      expect(root).toBe(1);
+    });
+
+    test('n=0 应返回空边集', () => {
+      const { edges, root } = G.binaryTree(0);
+      expect(edges).toEqual([]);
+      expect(root).toBe(1);
+    });
+  });
+
   // G.debug 主要用于控制台日志，直接测试其输出较为复杂且易碎。
   // 通常只需确保其不抛出错误，必要时可以 mock console.log。
   // 暂时跳过对 G.debug 的显式测试。
 });
+
