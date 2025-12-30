@@ -53,12 +53,12 @@
     "@typescript/native-preview": "^7.0.0-dev.20251228.1"
   },
   "dependencies": {
+    "cac": "^6.7.14",
     "consola": "^3.4.2",
-    "es-toolkit": "^1.40.0",
-    "execa": "^9.6.0",
+    "es-toolkit": "^1.43.0",
+    "execa": "^9.6.1",
     "ora": "^9.0.0",
     "picocolors": "^1.1.1",
-    "cac": "^6.7.14",
     "tsx": "^4.20.6"
   }
 }

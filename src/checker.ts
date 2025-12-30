@@ -32,6 +32,12 @@ interface FailureRecord {
   myOut: string;
 }
 
+// 测试用例执行时间记录
+interface TestTiming {
+  testNumber: number;
+  durationMs: number;
+}
+
 // 内部配置类型：std 和 target 可选，用于表示"未初始化"状态
 type InternalCheckerConfig = Partial<Pick<CheckerConfig, 'std' | 'target'>> &
   Omit<CheckerConfig, 'std' | 'target'> &
@@ -144,6 +150,7 @@ export class GenesisChecker {
     // --- 统计变量 ---
     const startTime = Date.now();
     const failures: FailureRecord[] = [];
+    const testTimings: TestTiming[] = [];
     let passCount = 0;
 
     // --- 对拍循环 ---
@@ -178,11 +185,14 @@ export class GenesisChecker {
         }
       }
 
+      const testStartTime = Date.now();
       try {
         const { stdout: myOutput } = await execa(targetCommand, targetArgs, {
           input: formattedInput,
           timeout: this.timeoutMs,
         });
+        const testDuration = Date.now() - testStartTime;
+        testTimings.push({ testNumber: i, durationMs: testDuration });
 
         const passed = compareOutputs(stdOutput, myOutput, this.config.compareMode);
 
@@ -208,6 +218,8 @@ export class GenesisChecker {
         }
 
       } catch (error) {
+        const testDuration = Date.now() - testStartTime;
+        testTimings.push({ testNumber: i, durationMs: testDuration });
         const execaError = error as ExecaError;
         const failure: FailureRecord = {
           testNumber: i,
@@ -249,6 +261,9 @@ export class GenesisChecker {
       // 保存第一个失败的数据
       await this.saveArtifacts(failures[0]);
     }
+
+    // B1+B2: 显示性能统计
+    this.reportPerformanceStats(testTimings);
   }
 
   // ---------------------------------------------------------------------------
@@ -356,5 +371,50 @@ export class GenesisChecker {
     }
     const shown = lines.slice(0, maxLines);
     return pc.dim('   ') + shown.join('\n   ') + pc.dim(`\n   ${t('checker.truncated', lines.length - maxLines)}`);
+  }
+
+  /**
+   * B1+B2: 报告性能统计
+   */
+  private reportPerformanceStats(testTimings: TestTiming[]): void {
+    if (testTimings.length === 0) return;
+
+    // 按时间排序，取最慢的 5 个
+    const sortedTimings = [...testTimings].sort((a, b) => b.durationMs - a.durationMs);
+    const topSlowest = sortedTimings.slice(0, 5);
+
+    // 计算统计数据
+    const avgDuration = testTimings.reduce((sum, t) => sum + t.durationMs, 0) / testTimings.length;
+    const maxDuration = sortedTimings[0]?.durationMs || 0;
+    const timeoutThreshold = this.timeoutMs * 0.8; // 80% 超时阈值
+
+    console.log('\n' + '─'.repeat(50));
+    console.log('⏱️  ' + t('checker.perfStats') + '\n');
+
+    // 显示最慢测试点
+    console.log(`  ${t('checker.slowestTests')}:`);
+    for (const timing of topSlowest) {
+      const percentage = (timing.durationMs / this.timeoutMs * 100).toFixed(0);
+      let status = '';
+      if (timing.durationMs >= this.timeoutMs) {
+        status = pc.red(' ❌ TLE');
+      } else if (timing.durationMs >= timeoutThreshold) {
+        status = pc.yellow(' ⚠️ ' + t('checker.nearTimeout'));
+      }
+      console.log(`    #${timing.testNumber.toString().padStart(3)}: ${this.formatTime(timing.durationMs).padStart(7)} (${percentage}%)${status}`);
+    }
+
+    // 汇总统计
+    console.log('');
+    console.log(`  📊 ${t('checker.avgTime')}: ${this.formatTime(avgDuration)}`);
+    console.log(`  🏆 ${t('checker.maxTime')}: ${this.formatTime(maxDuration)} (#${sortedTimings[0]?.testNumber || '-'})`);
+
+    // 接近超时的测试点数量
+    const nearTimeoutCount = testTimings.filter(t => t.durationMs >= timeoutThreshold && t.durationMs < this.timeoutMs).length;
+    if (nearTimeoutCount > 0) {
+      console.log(pc.yellow(`  ⚠️  ${t('checker.nearTimeoutCount', nearTimeoutCount)}`));
+    }
+
+    console.log('');
   }
 }

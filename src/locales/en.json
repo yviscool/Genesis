@@ -118,5 +118,20 @@
   "error.segfault.hint": "Check for array out of bounds, null pointer access, or stack overflow from deep recursion",
   "error.fpe": "Floating Point Exception",
   "error.fpe.desc": "An illegal arithmetic operation occurred",
-  "error.fpe.hint": "Check for division by zero, modulo by zero, or integer overflow"
+  "error.fpe.hint": "Check for division by zero, modulo by zero, or integer overflow",
+  "maker.fileStats": "File Statistics",
+  "maker.totalFiles": "Total files",
+  "maker.pairs": "in/out pairs",
+  "maker.totalInput": "Total input size",
+  "maker.totalOutput": "Total output size",
+  "maker.totalSize": "Total",
+  "maker.maxInput": "Max input",
+  "maker.slowestCase": "Slowest case",
+  "maker.emptyOutputWarning": "Warning: Case {0} has empty output, check your solution",
+  "checker.perfStats": "Performance Statistics",
+  "checker.slowestTests": "Slowest Tests",
+  "checker.nearTimeout": "Near Timeout",
+  "checker.avgTime": "Average Time",
+  "checker.maxTime": "Max Time",
+  "checker.nearTimeoutCount": "{0} test(s) near timeout (>80%)"
 }

@@ -93,6 +93,7 @@ async function handleInterpretedLanguage(sourceFile: string, lang: LanguageInfo)
 // --- 编译型语言逻辑 ---
 // =============================================================================
 
+
 async function handleCompiledLanguage(
   sourceFile: string,
   lang: LanguageInfo,
@@ -103,7 +104,14 @@ async function handleCompiledLanguage(
     consola.error(getCompilerHelpMessage(lang));
     return null;
   }
-  consola.info(t('compilation.usingCompiler', compiler));
+
+  // D2: 获取并显示编译器版本
+  const version = await getCompilerVersion(compiler);
+  if (version) {
+    consola.info(t('compilation.usingCompiler', `${compiler} ${green(version)}`));
+  } else {
+    consola.info(t('compilation.usingCompiler', compiler));
+  }
 
   const profile = await getCompilationProfile(sourceFile, compiler, lang, config.compilerFlags);
   const cacheKey = `${sourceFile}-${compiler}`;
@@ -284,6 +292,45 @@ async function findRuntime(commands: readonly string[]): Promise<string | null> 
     }
   }
   return null;
+}
+
+/**
+ * D2: 获取编译器版本号
+ */
+async function getCompilerVersion(compiler: string): Promise<string | null> {
+  try {
+    let stdout: string;
+
+    if (compiler === 'go') {
+      const result = await execaCommand('go version');
+      stdout = result.stdout;
+      // go version go1.21.0 linux/amd64
+      const match = stdout.match(/go(\d+\.\d+\.\d+)/);
+      return match ? match[1] : null;
+    } else if (compiler === 'javac') {
+      const result = await execaCommand('javac -version');
+      stdout = result.stdout || result.stderr;
+      // javac 17.0.1
+      const match = stdout.match(/javac\s+(\S+)/);
+      return match ? match[1] : null;
+    } else if (compiler === 'rustc') {
+      const result = await execaCommand('rustc --version');
+      stdout = result.stdout;
+      // rustc 1.70.0 (90c541806 2023-05-31)
+      const match = stdout.match(/rustc\s+(\S+)/);
+      return match ? match[1] : null;
+    } else {
+      // g++, clang++ 等
+      const result = await execaCommand(`${compiler} --version`);
+      stdout = result.stdout;
+      // g++ (Ubuntu 13.2.0-4ubuntu3) 13.2.0
+      // clang version 17.0.0
+      const match = stdout.match(/(\d+\.\d+\.\d+|\d+\.\d+)/);
+      return match ? match[1] : null;
+    }
+  } catch {
+    return null;
+  }
 }
 
 function getCompilerHelpMessage(lang: LanguageInfo): string {

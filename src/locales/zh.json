@@ -118,5 +118,20 @@
   "error.segfault.hint": "检查数组越界、空指针访问、递归过深导致栈溢出",
   "error.fpe": "浮点异常 (Floating Point Exception)",
   "error.fpe.desc": "发生了非法的算术运算",
-  "error.fpe.hint": "检查是否存在除以零、模零、或整数溢出"
+  "error.fpe.hint": "检查是否存在除以零、模零、或整数溢出",
+  "maker.fileStats": "文件统计",
+  "maker.totalFiles": "总文件数",
+  "maker.pairs": "对 in/out",
+  "maker.totalInput": "输入文件总大小",
+  "maker.totalOutput": "输出文件总大小",
+  "maker.totalSize": "总计",
+  "maker.maxInput": "最大输入",
+  "maker.slowestCase": "最慢测试点",
+  "maker.emptyOutputWarning": "警告: 测试点 {0} 的输出为空，请检查标程",
+  "checker.perfStats": "性能统计",
+  "checker.slowestTests": "最慢测试点",
+  "checker.nearTimeout": "接近超时",
+  "checker.avgTime": "平均耗时",
+  "checker.maxTime": "最大耗时",
+  "checker.nearTimeoutCount": "{0} 个测试点接近超时 (>80%)"
 }

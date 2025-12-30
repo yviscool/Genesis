@@ -4,27 +4,27 @@ import { Maker, G } from '../src/index';
 
 await Maker
   .configure({
-    solution: 'std.cpp', 
+    solution: 'std.cpp',
     // 我们把起始编号设为 101，来测试这个配置是否生效
     // startFrom: 101, 
   })
-  
-.case('Map Problem', () => {
-  const n = 5, m = 5;
-  const grid = G.matrix(n, m, () => G.int(0, 1)); // grid 是一个数字矩阵，如 [[0,1],[1,0]]
 
-  // 这是错误的！因为 grid 不是字符串数组，会被格式化为多行 "0 1"
-  return [ [n, m], grid ];
+  .case('Map Problem', () => {
+    const n = 5, m = 5;
+    const grid = G.matrix(n, m, () => G.int(0, 1)); // grid 是一个数字矩阵，如 [[0,1],[1,0]]
 
-  // 正确的做法: 先将 grid 的每一行转换为字符串
-  const stringGrid = grid.map(row => row.join(' '));
-  // stringGrid 是一个字符串数组, 如 ["0 1", "1 0"]
+    // 这是错误的！因为 grid 不是字符串数组，会被格式化为多行 "0 1"
+    return [[n, m], grid];
 
-  return [
-    [n, m],     // -> "5 5"
-    stringGrid  // -> "0 1\n1 0"
-  ];
-})
+    // 正确的做法: 先将 grid 的每一行转换为字符串
+    const stringGrid = grid.map(row => row.join(' '));
+    // stringGrid 是一个字符串数组, 如 ["0 1", "1 0"]
+
+    return [
+      [n, m],     // -> "5 5"
+      stringGrid  // -> "0 1\n1 0"
+    ];
+  })
   /**
    * Case 2: 小数据 - 完全没有杂物
    * 目的: 最简单的情况，答案应该是 n * m。
@@ -124,33 +124,5 @@ await Maker
     ];
   })
 
-  /**
-   * Case 9: 极限数据 - 稀疏杂物
-   * 目的: 测试 n, m 达到最大值时的性能，且杂物较少。
-   */
-  .case('Max Data - Sparse Debris', () => {
-    const n = 1000, m = 1000;
-    // 只有 1% 的概率是杂物
-    const grid = G.matrix(n, m, () => Math.random() < 0.01 ? '#' : '.').map(row => row.join(''));
-    return [
-      `${n} ${m}`,
-      ...grid
-    ];
-  })
-
-  /**
-   * Case 10: 极限数据 - 密集杂物
-   * 目的: 测试 n, m 达到最大值时的性能，且杂物较多。
-   */
-  .case('Max Data - Dense Debris', () => {
-    const n = 1000, m = 1000;
-    // 80% 的概率是杂物
-    const grid = G.matrix(n, m, () => Math.random() < 0.8 ? '#' : '.').map(row => row.join(''));
-    return [
-      `${n} ${m}`,
-      ...grid
-    ];
-  })
-  
   // 启动生成流程
   .generate();

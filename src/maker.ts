@@ -142,7 +142,7 @@ class GenesisMaker {
     const concurrencyLimit = os.cpus().length;
     let completedCases = 0;
     let successCount = 0;
-    const results: { name: string; success: boolean; error?: string }[] = [];
+    const results: { name: string; success: boolean; error?: string; durationMs?: number; outSize?: number }[] = [];
     const startTime = Date.now();
 
     const formatProgress = () => {
@@ -171,7 +171,8 @@ class GenesisMaker {
     }
 
     const elapsed = Date.now() - startTime;
-    spinner.succeed(t('maker.complete', successCount, totalCases, this.formatTime(elapsed))); this.reportResults(results);
+    spinner.succeed(t('maker.complete', successCount, totalCases, this.formatTime(elapsed)));
+    await this.reportResults(results);
   }
 
   /**
@@ -187,7 +188,7 @@ class GenesisMaker {
    * 汇总并报告生成结果。
    * @param results 所有测试点的生成结果数组。
    */
-  private reportResults(results: { name: string; success: boolean; error?: string }[]): void {
+  private async reportResults(results: { name: string; success: boolean; error?: string; durationMs?: number; outSize?: number }[]): Promise<void> {
     const totalCases = results.length;
     let successCount = 0;
 
@@ -206,6 +207,114 @@ class GenesisMaker {
     } else {
       consola.warn(t('maker.generationFinishedWithErrors', totalCases - successCount, successCount, totalCases));
     }
+
+    // 输出文件统计信息
+    await this.reportFileStats(results);
+  }
+
+  /**
+   * 格式化文件大小为人类可读格式
+   */
+  private formatBytes(bytes: number): string {
+    if (bytes === 0) return '0 B';
+    const units = ['B', 'KB', 'MB', 'GB'];
+    const k = 1024;
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    const value = bytes / Math.pow(k, i);
+    return `${value < 10 ? value.toFixed(1) : Math.round(value)} ${units[i]}`;
+  }
+
+  /**
+   * 报告生成文件的统计信息
+   */
+  private async reportFileStats(results: { name: string; success: boolean; durationMs?: number; outSize?: number }[]): Promise<void> {
+    const successfulCases = results
+      .map((r, i) => ({ ...r, caseNumber: this.config.startFrom + i }))
+      .filter(r => r.success);
+
+    if (successfulCases.length === 0) return;
+
+    console.log('\n' + '─'.repeat(60));
+    console.log('📊 ' + t('maker.fileStats') + '\n');
+
+    let totalInSize = 0;
+    let totalOutSize = 0;
+    let maxInSize = 0;
+    let maxInCase = '';
+    let maxDuration = 0;
+    let maxDurationCase = '';
+    const emptyOutputCases: string[] = [];
+
+    // 表头 (增加 Time 列)
+    console.log('  #    │ Input        │ Output       │ Time      │ Case');
+    console.log('───────┼──────────────┼──────────────┼───────────┼' + '─'.repeat(20));
+
+    for (const caseItem of successfulCases) {
+      const inFile = path.join(this.config.outputDir, `${caseItem.caseNumber}.in`);
+      const outFile = path.join(this.config.outputDir, `${caseItem.caseNumber}.out`);
+
+      try {
+        const [inStat, outStat] = await Promise.all([
+          fs.stat(inFile).catch(() => ({ size: 0 })),
+          fs.stat(outFile).catch(() => ({ size: 0 }))
+        ]);
+
+        const inSize = inStat.size;
+        const outSize = outStat.size;
+        const durationMs = caseItem.durationMs ?? 0;
+
+        totalInSize += inSize;
+        totalOutSize += outSize;
+
+        if (inSize > maxInSize) {
+          maxInSize = inSize;
+          maxInCase = caseItem.name;
+        }
+
+        if (durationMs > maxDuration) {
+          maxDuration = durationMs;
+          maxDurationCase = caseItem.name;
+        }
+
+        // 检测空输出
+        if (outSize === 0) {
+          emptyOutputCases.push(caseItem.name);
+        }
+
+        const caseNum = String(caseItem.caseNumber).padStart(4, ' ');
+        const inSizeStr = this.formatBytes(inSize).padStart(10, ' ');
+        const outSizeStr = this.formatBytes(outSize).padStart(10, ' ');
+        const timeStr = this.formatTime(durationMs).padStart(7, ' ');
+        const caseName = caseItem.name.replace(/^\(#\d+:?\s*/, '').replace(/\)$/, '') || '-';
+
+        console.log(`  ${caseNum} │ ${inSizeStr}   │ ${outSizeStr}   │ ${timeStr}   │ ${caseName}`);
+      } catch {
+        // 忽略文件读取错误
+      }
+    }
+
+    // 汇总
+    console.log('───────┴──────────────┴──────────────┴───────────┴' + '─'.repeat(20));
+    console.log(`\n  📁 ${t('maker.totalFiles')}: ${successfulCases.length * 2} (${successfulCases.length} ${t('maker.pairs')})`);
+    console.log(`  📥 ${t('maker.totalInput')}: ${this.formatBytes(totalInSize)}`);
+    console.log(`  📤 ${t('maker.totalOutput')}: ${this.formatBytes(totalOutSize)}`);
+    console.log(`  📦 ${t('maker.totalSize')}: ${this.formatBytes(totalInSize + totalOutSize)}`);
+    if (maxInCase) {
+      console.log(`  📈 ${t('maker.maxInput')}: ${maxInCase} (${this.formatBytes(maxInSize)})`);
+    }
+    if (maxDurationCase) {
+      console.log(`  ⏱️  ${t('maker.slowestCase')}: ${maxDurationCase} (${this.formatTime(maxDuration)})`);
+    }
+
+    // 空输出警告
+    if (emptyOutputCases.length > 0) {
+      console.log('');
+      for (const caseName of emptyOutputCases) {
+        console.log(`  ⚠️  ${t('maker.emptyOutputWarning', caseName)}`);
+      }
+    }
+
+    console.log('');
   }
 
   // ---------------------------------------------------------------------------
@@ -219,8 +328,9 @@ class GenesisMaker {
    * @param runArgs 运行标程的命令和参数。
    * @returns {Promise<{ name: string; success: boolean; error?: string }>} 操作结果。
    */
-  private async generateSingleCase(caseItem: Case, caseNumber: number, runArgs: string[]): Promise<{ name: string; success: boolean; error?: string }> {
+  private async generateSingleCase(caseItem: Case, caseNumber: number, runArgs: string[]): Promise<{ name: string; success: boolean; error?: string; durationMs?: number; outSize?: number }> {
     const caseName = caseItem.label ? `(#${caseNumber}: ${caseItem.label})` : `(#${caseNumber})`;
+    const startTime = Date.now();
     try {
       const rawInput = caseItem.generator();
       const formattedInput = formatData(rawInput);
@@ -234,10 +344,12 @@ class GenesisMaker {
       const outFile = path.join(this.config.outputDir, `${caseNumber}.out`);
       await fs.writeFile(outFile, stdout);
 
-      return { name: caseName, success: true };
+      const durationMs = Date.now() - startTime;
+      return { name: caseName, success: true, durationMs, outSize: stdout.length };
     } catch (error: any) {
+      const durationMs = Date.now() - startTime;
       const errorMessage = error.stderr || error.message || 'An unknown error occurred.';
-      return { name: caseName, success: false, error: errorMessage };
+      return { name: caseName, success: false, error: errorMessage, durationMs };
     }
   }
 
