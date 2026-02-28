@@ -10,9 +10,28 @@ export function points(n: number, minVal: number, maxVal: number, options: { typ
     const { type = 'random' } = options;
 
     if (type === 'random') {
-        const pointSet = new Set<string>();
-        const maxPossible = (maxVal - minVal + 1) ** 2;
+        const range = maxVal - minVal + 1;
+        const maxPossible = range * range;
         const target = Math.min(n, maxPossible);
+        const DENSE_RATIO = 0.65;
+        const MAX_POOL_SIZE = 1_000_000;
+
+        if (maxPossible <= MAX_POOL_SIZE && target / maxPossible >= DENSE_RATIO) {
+            // 接近满网格时改用池采样，避免 set 去重退化
+            const pool = Array.from({ length: maxPossible }, (_, i) => i);
+            for (let i = 0; i < target; i++) {
+                const j = i + core.int(0, maxPossible - i - 1);
+                [pool[i], pool[j]] = [pool[j], pool[i]];
+            }
+
+            return pool.slice(0, target).map(idx => {
+                const x = minVal + Math.floor(idx / range);
+                const y = minVal + (idx % range);
+                return [x, y];
+            });
+        }
+
+        const pointSet = new Set<string>();
         while (pointSet.size < target) {
             pointSet.add(`${core.int(minVal, maxVal)},${core.int(minVal, maxVal)}`);
         }

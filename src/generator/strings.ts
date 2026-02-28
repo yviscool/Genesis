@@ -17,7 +17,7 @@ export const CHARSET = {
 export function string(len: number, charset = CHARSET.ALPHANUMERIC): string {
     let result = '';
     for (let i = 0; i < len; i++) {
-        result += charset.charAt(Math.floor(Math.random() * charset.length));
+        result += charset.charAt(core.int(0, charset.length - 1));
     }
     return result;
 }

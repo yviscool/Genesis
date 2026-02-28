@@ -3,19 +3,39 @@
 
 import * as core from './core';
 
-// 质数筛
-function sievePrimes(max: number): number[] {
-    if (max < 2) return [];
-    const sieve = new Array(max + 1).fill(true);
-    sieve[0] = sieve[1] = false;
-    for (let i = 2; i * i <= max; i++) {
-        if (sieve[i]) {
-            for (let j = i * i; j <= max; j += i) {
-                sieve[j] = false;
-            }
+// 增量质数缓存（按最大上界复用）
+let primeCacheMax = 1;
+const primeCache: number[] = [];
+
+function isPrimeByCache(candidate: number): boolean {
+    const limit = Math.floor(Math.sqrt(candidate));
+    for (const p of primeCache) {
+        if (p > limit) break;
+        if (candidate % p === 0) return false;
+    }
+    return true;
+}
+
+function ensurePrimesUpTo(max: number): void {
+    if (max <= primeCacheMax) return;
+    const start = Math.max(2, primeCacheMax + 1);
+    for (let n = start; n <= max; n++) {
+        if (isPrimeByCache(n)) {
+            primeCache.push(n);
         }
     }
-    return sieve.map((isPrime, idx) => isPrime ? idx : -1).filter(x => x !== -1);
+    primeCacheMax = max;
+}
+
+function lowerBound(arr: number[], target: number): number {
+    let l = 0;
+    let r = arr.length;
+    while (l < r) {
+        const mid = (l + r) >> 1;
+        if (arr[mid] < target) l = mid + 1;
+        else r = mid;
+    }
+    return l;
 }
 
 // GCD
@@ -46,13 +66,28 @@ export function distinctInts(count: number, min: number, max: number): number[] 
     if (count > range) {
         throw new Error(`Cannot generate ${count} distinct integers from a range of size ${range}.`);
     }
-    const s = new Set<number>();
-    while (s.size < count) s.add(core.int(min, max));
-    return Array.from(s);
+
+    if (count <= 0) return [];
+
+    // 高占比场景使用局部 Fisher-Yates，避免反复撞值
+    const DENSE_RATIO = 0.6;
+    const MAX_POOL_SIZE = 2_000_000;
+    if (range <= MAX_POOL_SIZE && count / range >= DENSE_RATIO) {
+        const pool = Array.from({ length: range }, (_, i) => min + i);
+        for (let i = 0; i < count; i++) {
+            const j = i + core.int(0, range - i - 1);
+            [pool[i], pool[j]] = [pool[j], pool[i]];
+        }
+        return pool.slice(0, count);
+    }
+
+    const values = new Set<number>();
+    while (values.size < count) values.add(core.int(min, max));
+    return Array.from(values);
 }
 
 export function float(min: number, max: number, precision = 2): number {
-    const value = Math.random() * (max - min) + min;
+    const value = core.rand() * (max - min) + min;
     return parseFloat(value.toFixed(precision));
 }
 
@@ -73,11 +108,17 @@ export function odd(min: number, max: number): number {
 }
 
 export function prime(min: number, max: number): number {
-    const primes = sievePrimes(max).filter(p => p >= min);
-    if (primes.length === 0) {
+    ensurePrimesUpTo(max);
+    const start = lowerBound(primeCache, min);
+    if (start >= primeCache.length || primeCache[start] > max) {
         throw new Error(`No prime numbers exist in the range [${min}, ${max}].`);
     }
-    return primes[core.int(0, primes.length - 1)];
+
+    let end = lowerBound(primeCache, max + 1) - 1;
+    if (end < start) {
+        throw new Error(`No prime numbers exist in the range [${min}, ${max}].`);
+    }
+    return primeCache[core.int(start, end)]!;
 }
 
 export function coprime(min: number, max: number): [number, number] {

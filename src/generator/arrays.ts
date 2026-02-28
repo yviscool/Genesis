@@ -51,7 +51,7 @@ export function matrix<T>(rows: number, cols: number, cellGenerator: (r: number,
 }
 
 export function grid01(rows: number, cols: number, density = 0.5): number[][] {
-    return matrix(rows, cols, () => Math.random() < density ? 1 : 0);
+    return matrix(rows, cols, () => core.rand() < density ? 1 : 0);
 }
 
 export function maze(rows: number, cols: number, options: { wall?: string; road?: string } = {}): string[][] {
@@ -86,9 +86,24 @@ export function maze(rows: number, cols: number, options: { wall?: string; road?
     return grid;
 }
 
-export function intervals(n: number, min: number, max: number, options: { overlapping?: boolean; sorted?: boolean; minLen?: number; maxLen?: number } = {}): number[][] {
-    const { overlapping = true, sorted: shouldSort = false, minLen = 1, maxLen = max - min } = options;
+function allocateWithCap(total: number, slots: number, cap: number): number[] {
+    const result = new Array<number>(slots).fill(0);
+    let remain = total;
+    for (let i = 0; i < slots; i++) {
+        const maxRest = (slots - i - 1) * cap;
+        const low = Math.max(0, remain - maxRest);
+        const high = Math.min(cap, remain);
+        const val = core.int(low, high);
+        result[i] = val;
+        remain -= val;
+    }
+    return core.shuffle(result);
+}
+
+export function intervals(n: number, min: number, max: number, options: { overlapping?: boolean; sorted?: boolean; minLen?: number; maxLen?: number; allowGaps?: boolean } = {}): number[][] {
+    const { overlapping = true, sorted: shouldSort = false, minLen = 1, maxLen = max - min, allowGaps = false } = options;
     const result: number[][] = [];
+    if (n <= 0) return result;
 
     if (overlapping) {
         const upperLen = Math.min(maxLen, max - min + 1);
@@ -105,13 +120,42 @@ export function intervals(n: number, min: number, max: number, options: { overla
         if (totalMinSpace > max - min + 1) {
             throw new Error(`Cannot generate ${n} non-overlapping intervals in range [${min}, ${max}].`);
         }
-        const gaps = max - min + 1 - totalMinSpace;
-        const extraLens = partition(n, gaps, { minVal: 0 });
-        let current = min;
+
+        if (!allowGaps) {
+            const gaps = max - min + 1 - totalMinSpace;
+            const extraLens = partition(n, gaps, { minVal: 0 });
+            let current = min;
+            for (let i = 0; i < n; i++) {
+                const len = minLen + extraLens[i];
+                result.push([current, current + len - 1]);
+                current += len;
+            }
+            return shouldSort ? result : core.shuffle(result);
+        }
+
+        const totalSpace = max - min + 1;
+        const maxExtraPerInterval = Math.max(0, maxLen - minLen);
+        const maxUsableLength = totalMinSpace + n * maxExtraPerInterval;
+        const chosenLength = Math.min(totalSpace, maxUsableLength);
+        const extraLength = chosenLength - totalMinSpace;
+
+        if (extraLength < 0) {
+            throw new Error(`Cannot generate ${n} non-overlapping intervals in range [${min}, ${max}] with minLen=${minLen}.`);
+        }
+
+        const extraLens = allocateWithCap(extraLength, n, maxExtraPerInterval);
+        const lengths = extraLens.map(v => minLen + v);
+
+        const gapTotal = totalSpace - lengths.reduce((acc, len) => acc + len, 0);
+        const gaps = partition(n + 1, gapTotal, { minVal: 0 });
+
+        let current = min + gaps[0];
         for (let i = 0; i < n; i++) {
-            const len = minLen + extraLens[i];
-            result.push([current, current + len - 1]);
-            current += len;
+            const len = lengths[i];
+            const l = current;
+            const r = l + len - 1;
+            result.push([l, r]);
+            current = r + 1 + gaps[i + 1];
         }
         return shouldSort ? result : core.shuffle(result);
     }

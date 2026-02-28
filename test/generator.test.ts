@@ -686,6 +686,20 @@ describe('G (Generator) - 生成器测试', () => {
       expect(visited.size).toBe(n);
     });
 
+    test('稠密简单图应稳定生成（候选池采样路径）', () => {
+      const n = 20;
+      const m = 185; // max=190, 接近上限
+      const graph = G.graph(n, m, { type: 'simple' });
+      expect(graph.length).toBe(m);
+    });
+
+    test('有向二分图在高边密度下应稳定生成', () => {
+      const n = 10;
+      const m = 45; // max=50
+      const graph = G.graph(n, m, { type: 'bipartite', directed: true, oneBased: false });
+      expect(graph.length).toBe(m);
+    });
+
   });
 
   // ============ 新功能测试 ============
@@ -797,6 +811,53 @@ describe('G (Generator) - 生成器测试', () => {
 
       const single = G.intervals(1, 1, 1, { overlapping: true, minLen: 1, maxLen: 1 });
       expect(single).toEqual([[1, 1]]);
+    });
+
+    test('non-overlapping intervals should support allowGaps', () => {
+      const result = G.intervals(3, 1, 30, {
+        overlapping: false,
+        sorted: true,
+        minLen: 2,
+        maxLen: 2,
+        allowGaps: true,
+      });
+
+      expect(result).toBeArrayOfSize(3);
+      for (let i = 0; i < result.length; i++) {
+        const [l, r] = result[i];
+        expect(r - l + 1).toBe(2);
+        if (i > 0) {
+          const prev = result[i - 1];
+          expect(l).toBeGreaterThan(prev[1]);
+        }
+      }
+
+      const hasRealGap = result.some((curr, i) => i > 0 && curr[0] - result[i - 1][1] > 1);
+      expect(hasRealGap).toBe(true);
+    });
+  });
+
+  describe('G.withRng - 随机源注入', () => {
+    const createLcg = (seed: number) => {
+      let x = seed >>> 0;
+      return () => {
+        x = (x * 1664525 + 1013904223) >>> 0;
+        return x / 4294967296;
+      };
+    };
+
+    test('注入同一个 RNG 应得到可复现结果', () => {
+      try {
+        G.withRng(createLcg(12345));
+        const first = G.ints(8, 1, 1000);
+
+        G.withRng(createLcg(12345));
+        const second = G.ints(8, 1, 1000);
+
+        expect(first).toEqual(second);
+      } finally {
+        G.resetRng();
+      }
     });
   });
 

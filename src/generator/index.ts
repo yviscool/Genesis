@@ -62,6 +62,8 @@ export const G: IGenerator = {
     // === 排列/采样 ===
     shuffle: core.shuffle,
     sample: core.sample,
+    withRng: core.withRng,
+    resetRng: core.resetRng,
 
     // === 图论 ===
     tree: graphs.tree,

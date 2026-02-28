@@ -118,12 +118,52 @@ export function graph(n: number, m: number, options: GraphOptions = {}): number[
     }
 
     const edgeSet = new Set<string>();
+    const toEdgeKey = (u: number, v: number): string =>
+        directed ? `${u},${v}` : `${Math.min(u, v)},${Math.max(u, v)}`;
     const addEdge = (u: number, v: number) => {
         if (noSelfLoops && u === v) return false;
-        const key = directed ? `${u},${v}` : `${Math.min(u, v)},${Math.max(u, v)}`;
+        const key = toEdgeKey(u, v);
         if (edgeSet.has(key)) return false;
         edgeSet.add(key);
         return true;
+    };
+
+    const fillEdges = (
+        randomEdge: () => [number, number],
+        enumerateCandidates: () => [number, number][]
+    ) => {
+        let failedAttempts = 0;
+        const maxFailedAttempts = Math.max(2_000, (m - edgeSet.size) * 25);
+
+        while (edgeSet.size < m) {
+            const [u, v] = randomEdge();
+            const sizeBefore = edgeSet.size;
+            addEdge(u, v);
+
+            if (edgeSet.size === sizeBefore) {
+                failedAttempts++;
+                if (failedAttempts >= maxFailedAttempts) {
+                    // 稠密场景下切换到候选边池采样，避免重复碰撞导致退化
+                    const candidates = enumerateCandidates()
+                        .filter(([cu, cv]) => !edgeSet.has(toEdgeKey(cu, cv)));
+                    const remain = m - edgeSet.size;
+
+                    if (remain > candidates.length) {
+                        throw new Error('Not enough candidate edges to satisfy requested m.');
+                    }
+
+                    for (let i = 0; i < remain; i++) {
+                        const j = i + core.int(0, candidates.length - i - 1);
+                        [candidates[i], candidates[j]] = [candidates[j], candidates[i]];
+                        const [eu, ev] = candidates[i];
+                        addEdge(eu, ev);
+                    }
+                    return;
+                }
+            } else {
+                failedAttempts = 0;
+            }
+        }
     };
 
     // DAG
@@ -132,11 +172,25 @@ export function graph(n: number, m: number, options: GraphOptions = {}): number[
         if (connected) {
             for (let i = 1; i < n; i++) addEdge(nodes[core.int(0, i - 1)], nodes[i]);
         }
-        while (edgeSet.size < m) {
-            const i1 = core.int(0, n - 1);
-            const i2 = core.int(0, n - 1);
-            if (i1 !== i2) addEdge(nodes[Math.min(i1, i2)], nodes[Math.max(i1, i2)]);
-        }
+        fillEdges(
+            () => {
+                const i1 = core.int(0, n - 1);
+                let i2 = core.int(0, n - 1);
+                while (i1 === i2) {
+                    i2 = core.int(0, n - 1);
+                }
+                return [nodes[Math.min(i1, i2)], nodes[Math.max(i1, i2)]];
+            },
+            () => {
+                const candidates: [number, number][] = [];
+                for (let i = 0; i < n; i++) {
+                    for (let j = i + 1; j < n; j++) {
+                        candidates.push([nodes[i], nodes[j]]);
+                    }
+                }
+                return candidates;
+            }
+        );
     }
     // 二分图
     else if (type === 'bipartite') {
@@ -156,18 +210,52 @@ export function graph(n: number, m: number, options: GraphOptions = {}): number[
                 addEdge(u, setA.includes(u) ? core.sample(setB) : core.sample(setA));
             }
         }
-        while (edgeSet.size < m) {
-            addEdge(core.sample(setA), core.sample(setB));
-        }
+        fillEdges(
+            () => {
+                if (directed && core.int(0, 1) === 1) {
+                    return [core.sample(setB), core.sample(setA)];
+                }
+                return [core.sample(setA), core.sample(setB)];
+            },
+            () => {
+                const candidates: [number, number][] = [];
+                for (const u of setA) {
+                    for (const v of setB) {
+                        candidates.push([u, v]);
+                        if (directed) candidates.push([v, u]);
+                    }
+                }
+                return candidates;
+            }
+        );
     }
     // 普通图
     else {
         if (connected) {
             tree(n, { type: 'random', oneBased: false }).forEach(([u, v]) => addEdge(u, v));
         }
-        while (edgeSet.size < m) {
-            addEdge(core.int(0, n - 1), core.int(0, n - 1));
-        }
+        fillEdges(
+            () => [core.int(0, n - 1), core.int(0, n - 1)],
+            () => {
+                const candidates: [number, number][] = [];
+                if (directed) {
+                    for (let u = 0; u < n; u++) {
+                        for (let v = 0; v < n; v++) {
+                            if (noSelfLoops && u === v) continue;
+                            candidates.push([u, v]);
+                        }
+                    }
+                } else {
+                    for (let u = 0; u < n; u++) {
+                        const startV = noSelfLoops ? u + 1 : u;
+                        for (let v = startV; v < n; v++) {
+                            candidates.push([u, v]);
+                        }
+                    }
+                }
+                return candidates;
+            }
+        );
     }
 
     let result = Array.from(edgeSet).map(k => k.split(',').map(Number));

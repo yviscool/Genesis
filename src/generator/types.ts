@@ -3,6 +3,7 @@
 
 import type { DebugOptions, TreeOptions, GraphOptions, BinaryTreeOptions } from '../types';
 import type { SequenceOptions } from './numbers';
+import type { RandomSource } from './core';
 
 /**
  * 定义 Genesis 数据生成器 (G) 的完整接口。
@@ -98,6 +99,7 @@ export interface IGenerator {
         sorted?: boolean;
         minLen?: number;
         maxLen?: number;
+        allowGaps?: boolean;
     }): number[][];
 
     // ============ 排列/采样 ============
@@ -114,6 +116,12 @@ export interface IGenerator {
 
     /** 分块 */
     chunk<T>(array: readonly T[], size: number): T[][];
+
+    /** 注入随机源（返回值应在 [0,1)） */
+    withRng(rng: RandomSource): void;
+
+    /** 重置为默认随机源 Math.random */
+    resetRng(): void;
 
     // ============ 图论 ============
 
