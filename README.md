@@ -253,6 +253,7 @@ Maker.configure({
   outputDir: 'testdata',  // 指定输出目录 (默认: 'data')
   compiler: 'g++-12',     // 为编译型语言手动指定编译器 (默认: 自动探测)
   startFrom: 1,           // 文件编号起始值 (默认: 1)
+  runTimeoutMs: 10000,    // 运行标程生成 .out 的超时 (默认: 10000ms)
 });
 ```
 

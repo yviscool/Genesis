@@ -24,6 +24,12 @@ export interface GenesisConfig {
   startFrom?: number;
 
   /**
+   * Timeout (ms) for running the standard solution while generating `.out` files.
+   * @default 10000
+   */
+  runTimeoutMs?: number;
+
+  /**
    * 用于编译型语言的编译器命令。
    * 如果未指定，Genesis 会自动根据文件后缀检测合适的编译器
    * (例如 'g++', 'clang++', 'go', 'rustc', 'javac')。
@@ -203,4 +209,5 @@ export interface CheckerConfig {
    * @default 'normalized'
    */
   compareMode?: CompareMode;
+  workers?: number;
 }

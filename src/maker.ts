@@ -19,6 +19,7 @@ const DEFAULTS: Required<Omit<GenesisConfig, 'compiler' | 'compilerFlags'>> = {
   solution: 'std.cpp',
   outputDir: 'data',
   startFrom: 1,
+  runTimeoutMs: 10000,
 };
 
 const SOLUTION_FALLBACKS = [
@@ -52,7 +53,16 @@ class GenesisMaker {
    * @returns {this} 返回实例自身以支持链式调用。
    */
   public configure(userConfig: GenesisConfig): this {
-    this.config = { ...this.config, ...userConfig };
+    const normalizedConfig = { ...userConfig };
+
+    if (
+      normalizedConfig.runTimeoutMs !== undefined &&
+      (!Number.isFinite(normalizedConfig.runTimeoutMs) || normalizedConfig.runTimeoutMs <= 0)
+    ) {
+      normalizedConfig.runTimeoutMs = DEFAULTS.runTimeoutMs;
+    }
+
+    this.config = { ...this.config, ...normalizedConfig };
     return this;
   }
 
@@ -339,7 +349,10 @@ class GenesisMaker {
       await fs.writeFile(inFile, formattedInput);
 
       const [command, ...args] = runArgs;
-      const { stdout } = await execa(command, args, { input: formattedInput });
+      const { stdout } = await execa(command, args, {
+        input: formattedInput,
+        timeout: this.config.runTimeoutMs,
+      });
 
       const outFile = path.join(this.config.outputDir, `${caseNumber}.out`);
       await fs.writeFile(outFile, stdout);
@@ -348,7 +361,9 @@ class GenesisMaker {
       return { name: caseName, success: true, durationMs, outSize: stdout.length };
     } catch (error: any) {
       const durationMs = Date.now() - startTime;
-      const errorMessage = error.stderr || error.message || 'An unknown error occurred.';
+      const errorMessage = error.timedOut
+        ? `Execution timed out after ${this.config.runTimeoutMs}ms.`
+        : error.stderr || error.message || 'An unknown error occurred.';
       return { name: caseName, success: false, error: errorMessage, durationMs };
     }
   }
@@ -386,13 +401,17 @@ class GenesisMaker {
 
     const absoluteOutputDir = path.resolve(dir);
     const projectRoot = process.cwd();
+    const relativePath = path.relative(projectRoot, absoluteOutputDir);
 
     if (absoluteOutputDir === projectRoot) {
       consola.error(t('maker.safetyCheckRoot', dir));
       return false;
     }
 
-    if (!absoluteOutputDir.startsWith(projectRoot)) {
+    // Use path.relative to avoid prefix-based false positives such as
+    // "/repo/project2" being treated as inside "/repo/project".
+    const isOutsideProject = relativePath.startsWith('..') || path.isAbsolute(relativePath);
+    if (isOutsideProject) {
       consola.error(t('maker.safetyCheckOutside', dir));
       return false;
     }

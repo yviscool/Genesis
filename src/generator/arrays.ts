@@ -91,10 +91,14 @@ export function intervals(n: number, min: number, max: number, options: { overla
     const result: number[][] = [];
 
     if (overlapping) {
+        const upperLen = Math.min(maxLen, max - min + 1);
+        if (minLen < 1 || upperLen < minLen) {
+            throw new Error(`Cannot generate intervals in range [${min}, ${max}] with minLen=${minLen}, maxLen=${maxLen}.`);
+        }
         for (let i = 0; i < n; i++) {
-            const len = core.int(minLen, Math.min(maxLen, max - min));
-            const l = core.int(min, max - len);
-            result.push([l, l + len]);
+            const len = core.int(minLen, upperLen);
+            const l = core.int(min, max - len + 1);
+            result.push([l, l + len - 1]);
         }
     } else {
         const totalMinSpace = n * minLen;

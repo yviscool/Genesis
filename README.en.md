@@ -251,6 +251,7 @@ Maker.configure({
   outputDir: 'testdata',  // Specify the output directory (default: 'data')
   compiler: 'g++-12',     // Manually specify a compiler for compiled languages (default: auto-detect)
   startFrom: 1,           // Starting file number (default: 1)
+  runTimeoutMs: 10000,    // Timeout for running std during generation (default: 10000ms)
 });
 ```
 

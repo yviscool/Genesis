@@ -4,7 +4,6 @@ import ora from 'ora';
 import pc from 'picocolors';
 import { execa, type ExecaError } from 'execa';
 import fs from 'node:fs/promises';
-import path from 'node:path';
 import { type CheckerConfig, type CompareMode } from './types';
 import { prepareForExecution } from './execution';
 import { compareOutputs } from './differ';
@@ -13,59 +12,46 @@ import { t } from './i18n';
 import { highlightDiff } from './diff-highlight';
 import { formatRuntimeError, getSignalFromExitCode } from './error-formatter';
 
-// =============================================================================
-// --- 常量 & 默认值 ---
-// =============================================================================
-
 const FAIL_ARTIFACTS = {
   in: '_checker_fail.in',
   std: '_checker_std.out',
   my: '_checker_my.out',
 };
 
-// 失败记录类型
 interface FailureRecord {
   testNumber: number;
   type: 'WA' | 'RE' | 'TLE' | 'RE_STD';
   input: string;
   stdOut: string;
   myOut: string;
+  signal?: string;
+  exitCode?: number;
 }
 
-// 测试用例执行时间记录
 interface TestTiming {
   testNumber: number;
   durationMs: number;
 }
 
-// 内部配置类型：std 和 target 可选，用于表示"未初始化"状态
+interface TestExecutionResult {
+  failure?: FailureRecord;
+  timing?: TestTiming;
+}
+
 type InternalCheckerConfig = Partial<Pick<CheckerConfig, 'std' | 'target'>> &
   Omit<CheckerConfig, 'std' | 'target'> &
-{ compareMode: CompareMode };
-
-// =============================================================================
-// --- 核心实现类 ---
-// =============================================================================
+  { compareMode: CompareMode };
 
 export class GenesisChecker {
   private config: InternalCheckerConfig;
   private generator: (() => any) | null = null;
-  private timeoutMs: number = 5000; // 默认超时时间: 5s
-  private continueMode: boolean = false; // 继续模式：收集所有失败
+  private timeoutMs = 5000;
+  private continueMode = false;
 
   constructor() {
     this.config = { compareMode: 'normalized' };
   }
 
-  // ---------------------------------------------------------------------------
-  // --- 公共 API ---
-  // ---------------------------------------------------------------------------
-
-  /**
-   * 配置 Checker 实例。
-   * @param userConfig 用户提供的配置对象。
-   * @returns {this} 返回实例自身以支持链式调用。
-   */
   public configure(userConfig: CheckerConfig): this {
     if (!userConfig.std || !userConfig.target) {
       consola.error(t('checker.missingStdOrTarget'));
@@ -75,21 +61,11 @@ export class GenesisChecker {
     return this;
   }
 
-  /**
-   * 设置用于生成测试数据的生成器函数。
-   * @param generator 生成器函数。
-   * @returns {this} 返回实例自身以支持链式调用。
-   */
   public gen(generator: () => any): this {
     this.generator = generator;
     return this;
   }
 
-  /**
-   * 设置目标程序的执行超时时间。
-   * @param ms 超时时间（毫秒）。
-   * @returns {this} 返回实例自身以支持链式调用。
-   */
   public timeout(ms: number): this {
     if (ms > 0) {
       this.timeoutMs = ms;
@@ -97,20 +73,11 @@ export class GenesisChecker {
     return this;
   }
 
-  /**
-   * 启用继续模式：即使遇到错误也继续运行，收集所有失败点。
-   * @param enabled 是否启用。
-   * @returns {this} 返回实例自身以支持链式调用。
-   */
   public continue(enabled: boolean = true): this {
     this.continueMode = enabled;
     return this;
   }
 
-  /**
-   * 启动对拍流程。
-   * @param count 要运行的测试用例数量。
-   */
   public async run(count: number = 100): Promise<void> {
     consola.start(t('checker.starting'));
 
@@ -119,10 +86,14 @@ export class GenesisChecker {
       return;
     }
 
-    // 类型守卫：确保 std 和 target 已配置
     const { std, target } = this.config;
     if (!std || !target) {
       consola.error(t('checker.missingStdOrTarget'));
+      return;
+    }
+
+    if (count <= 0) {
+      consola.info(pc.dim('No tests requested.'));
       return;
     }
 
@@ -131,7 +102,6 @@ export class GenesisChecker {
       compilerFlags: this.config.compilerFlags,
     };
 
-    // --- 准备执行环境 ---
     const stdExec = await prepareForExecution(std, compilerConfig);
     if (!stdExec) {
       consola.error(t('checker.compileStdFailed', std));
@@ -147,140 +117,211 @@ export class GenesisChecker {
     const [stdCommand, ...stdArgs] = stdExec.runArgs;
     const [targetCommand, ...targetArgs] = targetExec.runArgs;
 
-    // --- 统计变量 ---
     const startTime = Date.now();
     const failures: FailureRecord[] = [];
     const testTimings: TestTiming[] = [];
     let passCount = 0;
+    let completedCount = 0;
+    let nextTestNumber = 1;
+    let stopRequested = false;
 
-    // --- 对拍循环 ---
     const spinner = ora(this.formatProgress(0, count, 0, startTime)).start();
+    const workerCount = this.resolveWorkerCount(count);
 
-    for (let i = 1; i <= count; i++) {
-      spinner.text = this.formatProgress(i, count, passCount, startTime);
-
-      const rawInput = this.generator();
-      const formattedInput = formatData(rawInput);
-
-      let stdOutput: string;
-      try {
-        const { stdout } = await execa(stdCommand, stdArgs, { input: formattedInput });
-        stdOutput = stdout;
-      } catch (error) {
-        spinner.fail(t('checker.stdCrashed', i));
-        const failure: FailureRecord = {
-          testNumber: i,
-          type: 'RE_STD',
-          input: formattedInput,
-          stdOut: String((error as ExecaError).stderr || ''),
-          myOut: ''
-        };
-
-        if (this.continueMode) {
-          failures.push(failure);
-          continue;
-        } else {
-          await this.reportFailure(failure);
+    const workerLoop = async () => {
+      while (true) {
+        if (stopRequested) {
           return;
         }
-      }
 
-      const testStartTime = Date.now();
-      try {
-        const { stdout: myOutput } = await execa(targetCommand, targetArgs, {
-          input: formattedInput,
-          timeout: this.timeoutMs,
-        });
-        const testDuration = Date.now() - testStartTime;
-        testTimings.push({ testNumber: i, durationMs: testDuration });
+        const testNumber = nextTestNumber++;
+        if (testNumber > count) {
+          return;
+        }
 
-        const passed = compareOutputs(stdOutput, myOutput, this.config.compareMode);
+        const result = await this.executeSingleTest(
+          testNumber,
+          stdCommand,
+          stdArgs,
+          targetCommand,
+          targetArgs,
+        );
 
-        if (!passed) {
-          const failure: FailureRecord = {
-            testNumber: i,
-            type: 'WA',
-            input: formattedInput,
-            stdOut: stdOutput,
-            myOut: myOutput
-          };
+        completedCount++;
 
-          if (this.continueMode) {
-            failures.push(failure);
-            spinner.text = this.formatProgress(i, count, passCount, startTime, failures.length);
-          } else {
-            spinner.fail(t('checker.wrongAnswer', i));
-            await this.reportFailure(failure);
-            return;
+        if (result.timing) {
+          testTimings.push(result.timing);
+        }
+
+        if (result.failure) {
+          failures.push(result.failure);
+          if (!this.continueMode) {
+            stopRequested = true;
           }
         } else {
           passCount++;
         }
 
-      } catch (error) {
-        const testDuration = Date.now() - testStartTime;
-        testTimings.push({ testNumber: i, durationMs: testDuration });
-        const execaError = error as ExecaError;
-        const failure: FailureRecord = {
-          testNumber: i,
-          type: execaError.timedOut ? 'TLE' : 'RE',
-          input: formattedInput,
-          stdOut: stdOutput,
-          myOut: execaError.timedOut ? '[Time Limit Exceeded]' : String(execaError.stderr || '[No stderr]')
-        };
-
-        if (this.continueMode) {
-          failures.push(failure);
-          spinner.text = this.formatProgress(i, count, passCount, startTime, failures.length);
-        } else {
-          spinner.fail(execaError.timedOut ? t('checker.timeLimitExceeded', i) : t('checker.runtimeError', i));
-          await this.reportFailure(failure);
-          return;
-        }
+        spinner.text = this.formatProgress(completedCount, count, passCount, startTime, failures.length);
       }
+    };
+
+    await Promise.all(Array.from({ length: workerCount }, () => workerLoop()));
+
+    if (!this.continueMode && failures.length > 0) {
+      const firstFailure = this.pickFirstFailure(failures);
+      spinner.fail(this.getFailureSpinnerMessage(firstFailure));
+      await this.reportFailure(firstFailure);
+      return;
     }
 
-    // --- 结果报告 ---
     const elapsed = Date.now() - startTime;
 
     if (failures.length === 0) {
       spinner.succeed(pc.green(t('checker.allPassedWithTime', count, this.formatTime(elapsed))));
     } else {
-      spinner.fail(pc.red(t('checker.foundErrors', failures.length)) + pc.dim(` ${t('checker.passedCount', passCount, count)}`));
+      const orderedFailures = [...failures].sort((a, b) => a.testNumber - b.testNumber);
+      spinner.fail(
+        pc.red(t('checker.foundErrors', orderedFailures.length)) +
+          pc.dim(` ${t('checker.passedCount', passCount, count)}`),
+      );
 
-      // 报告所有失败（继续模式）
       consola.log('');
-      for (const failure of failures.slice(0, 5)) { // 最多显示前 5 个
+      for (const failure of orderedFailures.slice(0, 5)) {
         await this.reportFailure(failure, true);
       }
 
-      if (failures.length > 5) {
-        consola.info(pc.dim(t('checker.moreErrors', failures.length - 5)));
+      if (orderedFailures.length > 5) {
+        consola.info(pc.dim(t('checker.moreErrors', orderedFailures.length - 5)));
       }
 
-      // 保存第一个失败的数据
-      await this.saveArtifacts(failures[0]);
+      await this.saveArtifacts(orderedFailures[0]);
     }
 
-    // B1+B2: 显示性能统计
     this.reportPerformanceStats(testTimings);
   }
 
-  // ---------------------------------------------------------------------------
-  // --- 辅助方法 ---
-  // ---------------------------------------------------------------------------
+  private resolveWorkerCount(totalTests: number): number {
+    const configuredWorkers = this.config.workers ?? 1;
+    if (!Number.isFinite(configuredWorkers) || configuredWorkers <= 0) {
+      return 1;
+    }
+    return Math.max(1, Math.min(totalTests, Math.floor(configuredWorkers)));
+  }
 
-  /**
-   * 格式化进度显示
-   */
-  private formatProgress(current: number, total: number, passed: number, startTime: number, failures: number = 0): string {
+  private pickFirstFailure(failures: FailureRecord[]): FailureRecord {
+    return failures.reduce((best, current) =>
+      current.testNumber < best.testNumber ? current : best,
+    );
+  }
+
+  private getFailureSpinnerMessage(failure: FailureRecord): string {
+    if (failure.type === 'WA') return t('checker.wrongAnswer', failure.testNumber);
+    if (failure.type === 'TLE') return t('checker.timeLimitExceeded', failure.testNumber);
+    if (failure.type === 'RE_STD') return t('checker.stdCrashed', failure.testNumber);
+    return t('checker.runtimeError', failure.testNumber);
+  }
+
+  private async executeSingleTest(
+    testNumber: number,
+    stdCommand: string,
+    stdArgs: string[],
+    targetCommand: string,
+    targetArgs: string[],
+  ): Promise<TestExecutionResult> {
+    const rawInput = this.generator!();
+    const formattedInput = formatData(rawInput);
+
+    let stdOutput: string;
+    try {
+      const { stdout } = await execa(stdCommand, stdArgs, { input: formattedInput });
+      stdOutput = stdout;
+    } catch (error) {
+      const execaError = error as ExecaError;
+      return {
+        failure: {
+          testNumber,
+          type: 'RE_STD',
+          input: formattedInput,
+          stdOut: String(execaError.stderr || execaError.message || ''),
+          myOut: '',
+          exitCode: typeof execaError.exitCode === 'number' ? execaError.exitCode : undefined,
+          signal: execaError.signal || undefined,
+        },
+      };
+    }
+
+    const testStartTime = Date.now();
+    try {
+      const { stdout: myOutput } = await execa(targetCommand, targetArgs, {
+        input: formattedInput,
+        timeout: this.timeoutMs,
+      });
+
+      const durationMs = Date.now() - testStartTime;
+      const passed = compareOutputs(stdOutput, myOutput, this.config.compareMode);
+      if (passed) {
+        return {
+          timing: { testNumber, durationMs },
+        };
+      }
+
+      return {
+        timing: { testNumber, durationMs },
+        failure: {
+          testNumber,
+          type: 'WA',
+          input: formattedInput,
+          stdOut: stdOutput,
+          myOut: myOutput,
+        },
+      };
+    } catch (error) {
+      const durationMs = Date.now() - testStartTime;
+      const execaError = error as ExecaError;
+      const exitCode = typeof execaError.exitCode === 'number' ? execaError.exitCode : undefined;
+      const signal =
+        execaError.signal ||
+        (exitCode !== undefined ? getSignalFromExitCode(exitCode) || undefined : undefined);
+      const stderrText = String(execaError.stderr || '').trim();
+      const enrichedStderr = stderrText
+        ? signal && !stderrText.includes(signal)
+          ? `${stderrText}\n[signal: ${signal}]`
+          : stderrText
+        : signal
+          ? `[signal: ${signal}]`
+          : '[No stderr]';
+
+      return {
+        timing: { testNumber, durationMs },
+        failure: {
+          testNumber,
+          type: execaError.timedOut ? 'TLE' : 'RE',
+          input: formattedInput,
+          stdOut: stdOutput,
+          myOut: execaError.timedOut ? '[Time Limit Exceeded]' : enrichedStderr,
+          signal,
+          exitCode,
+        },
+      };
+    }
+  }
+
+  private formatProgress(
+    current: number,
+    total: number,
+    passed: number,
+    startTime: number,
+    failures: number = 0,
+  ): string {
     const elapsed = Date.now() - startTime;
-    const speed = current > 0 ? (current / elapsed * 1000).toFixed(1) : '0';
+    const speed = current > 0 ? ((current / elapsed) * 1000).toFixed(1) : '0';
     const eta = current > 0 ? this.formatTime((elapsed / current) * (total - current)) : '--';
 
-    let status = failures > 0
-      ? t('checker.progressWithFails', current, total, passed, failures)
-      : t('checker.progress', current, total, passed);
+    let status =
+      failures > 0
+        ? t('checker.progressWithFails', current, total, passed, failures)
+        : t('checker.progress', current, total, passed);
     if (failures > 0) {
       status += ` ${pc.red(`✗${failures}`)}`;
     }
@@ -289,47 +330,38 @@ export class GenesisChecker {
     return status;
   }
 
-  /**
-   * 格式化时间
-   */
   private formatTime(ms: number): string {
     if (ms < 1000) return `${Math.round(ms)}ms`;
     if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`;
     return `${Math.floor(ms / 60000)}m${Math.round((ms % 60000) / 1000)}s`;
   }
 
-  /**
-   * 报告错误
-   */
   private async reportFailure(failure: FailureRecord, compact: boolean = false): Promise<void> {
-    const TYPE_MESSAGES: Record<string, string> = {
+    const typeMessages: Record<FailureRecord['type'], string> = {
       WA: t('checker.wa'),
       RE: t('checker.re'),
       TLE: t('checker.tle'),
       RE_STD: t('checker.re_std'),
     };
-    const typeMessage = TYPE_MESSAGES[failure.type] ?? t('checker.unknownError');
+
+    const typeMessage = typeMessages[failure.type] ?? t('checker.unknownError');
     const typeColor = failure.type === 'WA' ? pc.red : failure.type === 'TLE' ? pc.yellow : pc.magenta;
 
     consola.log('');
     consola.log(typeColor(t('checker.failureAt', failure.type, typeMessage, failure.testNumber)));
 
-    // 输入数据
     consola.log(pc.dim(t('checker.inputLabel')));
     consola.log(this.truncateOutput(failure.input, 10));
 
     if (failure.type === 'WA') {
-      // WA: 显示彩色 Diff
       consola.log('');
       consola.log(highlightDiff(failure.stdOut, failure.myOut));
     } else if (failure.type === 'RE') {
-      // RE: 诊断运行时错误
       consola.log('');
       consola.log(pc.dim(t('checker.errorOutputLabel')));
-      const diagnosis = formatRuntimeError(failure.myOut);
+      const diagnosis = formatRuntimeError(failure.myOut, failure.exitCode);
       consola.log(diagnosis || failure.myOut);
     } else {
-      // TLE / RE_STD
       consola.log('');
       consola.log(pc.dim(t('checker.expectedOutputLabel')));
       consola.log(this.truncateOutput(failure.stdOut, 5));
@@ -340,9 +372,6 @@ export class GenesisChecker {
     }
   }
 
-  /**
-   * 保存失败数据到文件
-   */
   private async saveArtifacts(failure: FailureRecord): Promise<void> {
     try {
       await fs.writeFile(FAIL_ARTIFACTS.in, failure.input);
@@ -356,14 +385,11 @@ export class GenesisChecker {
       if (failure.type === 'WA') {
         consola.info(pc.cyan(t('checker.diffHintCompact', FAIL_ARTIFACTS.std, FAIL_ARTIFACTS.my)));
       }
-    } catch (error) {
+    } catch {
       consola.error(t('checker.saveArtifactsFailed2'));
     }
   }
 
-  /**
-   * 截断过长的输出
-   */
   private truncateOutput(text: string, maxLines: number): string {
     const lines = text.split('\n');
     if (lines.length <= maxLines) {
@@ -373,46 +399,43 @@ export class GenesisChecker {
     return pc.dim('   ') + shown.join('\n   ') + pc.dim(`\n   ${t('checker.truncated', lines.length - maxLines)}`);
   }
 
-  /**
-   * B1+B2: 报告性能统计
-   */
   private reportPerformanceStats(testTimings: TestTiming[]): void {
     if (testTimings.length === 0) return;
 
-    // 按时间排序，取最慢的 5 个
     const sortedTimings = [...testTimings].sort((a, b) => b.durationMs - a.durationMs);
     const topSlowest = sortedTimings.slice(0, 5);
 
-    // 计算统计数据
-    const avgDuration = testTimings.reduce((sum, t) => sum + t.durationMs, 0) / testTimings.length;
+    const avgDuration =
+      testTimings.reduce((sum, timing) => sum + timing.durationMs, 0) / testTimings.length;
     const maxDuration = sortedTimings[0]?.durationMs || 0;
-    const timeoutThreshold = this.timeoutMs * 0.8; // 80% 超时阈值
+    const timeoutThreshold = this.timeoutMs * 0.8;
 
-    console.log('\n' + '─'.repeat(50));
-    console.log('⏱️  ' + t('checker.perfStats') + '\n');
+    console.log('\n' + '-'.repeat(50));
+    console.log('Performance Statistics\n');
 
-    // 显示最慢测试点
     console.log(`  ${t('checker.slowestTests')}:`);
     for (const timing of topSlowest) {
-      const percentage = (timing.durationMs / this.timeoutMs * 100).toFixed(0);
+      const percentage = ((timing.durationMs / this.timeoutMs) * 100).toFixed(0);
       let status = '';
       if (timing.durationMs >= this.timeoutMs) {
-        status = pc.red(' ❌ TLE');
+        status = pc.red(' [TLE]');
       } else if (timing.durationMs >= timeoutThreshold) {
-        status = pc.yellow(' ⚠️ ' + t('checker.nearTimeout'));
+        status = pc.yellow(` [${t('checker.nearTimeout')}]`);
       }
-      console.log(`    #${timing.testNumber.toString().padStart(3)}: ${this.formatTime(timing.durationMs).padStart(7)} (${percentage}%)${status}`);
+      console.log(
+        `    #${timing.testNumber.toString().padStart(3)}: ${this.formatTime(timing.durationMs).padStart(7)} (${percentage}%)${status}`,
+      );
     }
 
-    // 汇总统计
     console.log('');
-    console.log(`  📊 ${t('checker.avgTime')}: ${this.formatTime(avgDuration)}`);
-    console.log(`  🏆 ${t('checker.maxTime')}: ${this.formatTime(maxDuration)} (#${sortedTimings[0]?.testNumber || '-'})`);
+    console.log(`  ${t('checker.avgTime')}: ${this.formatTime(avgDuration)}`);
+    console.log(`  ${t('checker.maxTime')}: ${this.formatTime(maxDuration)} (#${sortedTimings[0]?.testNumber || '-'})`);
 
-    // 接近超时的测试点数量
-    const nearTimeoutCount = testTimings.filter(t => t.durationMs >= timeoutThreshold && t.durationMs < this.timeoutMs).length;
+    const nearTimeoutCount = testTimings.filter(
+      timing => timing.durationMs >= timeoutThreshold && timing.durationMs < this.timeoutMs,
+    ).length;
     if (nearTimeoutCount > 0) {
-      console.log(pc.yellow(`  ⚠️  ${t('checker.nearTimeoutCount', nearTimeoutCount)}`));
+      console.log(pc.yellow(`  ${t('checker.nearTimeoutCount', nearTimeoutCount)}`));
     }
 
     console.log('');

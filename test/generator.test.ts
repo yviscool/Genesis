@@ -786,6 +786,18 @@ describe('G (Generator) - 生成器测试', () => {
         expect(result[i][0]).toBeLessThanOrEqual(result[i + 1][0]);
       }
     });
+
+    test('overlapping intervals should remain inside [min, max]', () => {
+      const samples = G.intervals(20, 1, 5, { overlapping: true, minLen: 1, maxLen: 1 });
+      samples.forEach(([l, r]) => {
+        expect(l).toBeGreaterThanOrEqual(1);
+        expect(r).toBeLessThanOrEqual(5);
+        expect(l).toBeLessThanOrEqual(r);
+      });
+
+      const single = G.intervals(1, 1, 1, { overlapping: true, minLen: 1, maxLen: 1 });
+      expect(single).toEqual([[1, 1]]);
+    });
   });
 
   describe('G.convexHull - 凸包点生成', () => {
@@ -823,6 +835,38 @@ describe('G (Generator) - 生成器测试', () => {
       // 检查存在负权边
       const hasNegative = graph.some(e => e[2] < 0);
       expect(hasNegative).toBe(true);
+    });
+
+    test('directed negativeCycle should always create a real negative cycle', () => {
+      const hasNegativeCycle = (n: number, edges: number[][]): boolean => {
+        // Super-source trick: initialize all distances to 0 to detect cycles in any component.
+        const dist = new Array(n).fill(0);
+
+        for (let i = 0; i < n - 1; i++) {
+          let updated = false;
+          for (const [u, v, w] of edges) {
+            const from = u - 1;
+            const to = v - 1;
+            if (dist[from] + w < dist[to]) {
+              dist[to] = dist[from] + w;
+              updated = true;
+            }
+          }
+          if (!updated) break;
+        }
+
+        for (const [u, v, w] of edges) {
+          const from = u - 1;
+          const to = v - 1;
+          if (dist[from] + w < dist[to]) return true;
+        }
+        return false;
+      };
+
+      for (let i = 0; i < 20; i++) {
+        const edges = G.graph(8, 10, { directed: true, negativeCycle: true, weighted: [1, 10] });
+        expect(hasNegativeCycle(8, edges)).toBe(true);
+      }
     });
 
     test('轮图顶点数小于4应抛出错误', () => {

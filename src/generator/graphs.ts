@@ -51,6 +51,9 @@ export function graph(n: number, m: number, options: GraphOptions = {}): number[
 
     let { directed = false } = options;
     if (type === 'dag' && options.directed === undefined) directed = true;
+    if (negativeCycle && type === 'dag') {
+        throw new Error("Option 'negativeCycle' cannot be used with DAG graphs.");
+    }
 
     if (n <= 0) return [];
 
@@ -171,9 +174,62 @@ export function graph(n: number, m: number, options: GraphOptions = {}): number[
 
     if (weighted || negativeCycle) {
         const [minW, maxW] = Array.isArray(weighted) ? weighted : [1, 1e9];
+        const maxAbsWeight = Math.max(Math.abs(minW), Math.abs(maxW), 1);
+
         result.forEach(e => e.push(core.int(minW, maxW)));
-        if (negativeCycle && result.length >= 3) {
-            result.slice(0, 3).forEach(e => { e[2] = -core.int(1, maxW); });
+
+        if (negativeCycle) {
+            if (result.length === 0) {
+                throw new Error("Option 'negativeCycle' requires at least one edge.");
+            }
+
+            const edgeKey = (u: number, v: number): string =>
+                directed ? `${u},${v}` : `${Math.min(u, v)},${Math.max(u, v)}`;
+
+            const edgeIndex = new Map<string, number>();
+            result.forEach((e, idx) => edgeIndex.set(edgeKey(e[0], e[1]), idx));
+
+            const requiredCycle: [number, number][] = [];
+            if (directed) {
+                if (n === 1) {
+                    if (noSelfLoops) {
+                        throw new Error("Option 'negativeCycle' with directed graphs requires n >= 2 when self-loops are disabled.");
+                    }
+                    requiredCycle.push([0, 0]);
+                } else if (n === 2) {
+                    requiredCycle.push([0, 1], [1, 0]);
+                } else {
+                    requiredCycle.push([0, 1], [1, 2], [2, 0]);
+                }
+            } else {
+                // In an undirected graph, a single negative edge can be traversed back and forth.
+                requiredCycle.push([result[0][0], result[0][1]]);
+            }
+
+            if (result.length < requiredCycle.length) {
+                throw new Error(`Option 'negativeCycle' requires at least ${requiredCycle.length} edges, but got ${result.length}.`);
+            }
+
+            const requiredKeys = new Set(requiredCycle.map(([u, v]) => edgeKey(u, v)));
+            const upsertEdge = (u: number, v: number): number => {
+                const key = edgeKey(u, v);
+                const existingIndex = edgeIndex.get(key);
+                if (existingIndex !== undefined) return existingIndex;
+
+                const replaceIndex = result.findIndex(e => !requiredKeys.has(edgeKey(e[0], e[1])));
+                const targetIndex = replaceIndex === -1 ? 0 : replaceIndex;
+                const oldKey = edgeKey(result[targetIndex][0], result[targetIndex][1]);
+                edgeIndex.delete(oldKey);
+                result[targetIndex][0] = u;
+                result[targetIndex][1] = v;
+                edgeIndex.set(key, targetIndex);
+                return targetIndex;
+            };
+
+            const cycleEdgeIndices = requiredCycle.map(([u, v]) => upsertEdge(u, v));
+            for (const idx of cycleEdgeIndices) {
+                result[idx][2] = -core.int(1, maxAbsWeight);
+            }
         }
     }
 
