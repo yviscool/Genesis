@@ -250,10 +250,22 @@ Maker.configure({
   solution: 'main.go',    // Specify the standard solution filename
   outputDir: 'testdata',  // Specify the output directory (default: 'data')
   compiler: 'g++-12',     // Manually specify a compiler for compiled languages (default: auto-detect)
+  compilerFlags: ['-std=c++20'], // Put extra compiler/linker flags here
+  caseConcurrency: 4,     // Optional generation concurrency cap
+  ojProfile: 'linux',     // Optional OJ profile for platform-specific compiler tweaks
+  stackSizeBytes: 1 << 24,// Optional explicit stack size override for supported Windows toolchains
   startFrom: 1,           // Starting file number (default: 1)
   runTimeoutMs: 10000,    // Timeout for running std during generation (default: 10000ms)
 });
 ```
+
+On Windows, Genesis now auto-adds a Linux-compatible C++ stack-size linker flag for `g++`/`clang++` unless you already provide one. If you need a custom stack size, use `compilerFlags` instead of embedding flags into `compiler`.
+
+For large cases, Genesis may automatically reduce the actual generation concurrency below `caseConcurrency` to avoid excessive memory pressure.
+
+For most workflows, the defaults are already enough. Genesis writes a sibling manifest file next to `outputDir` by default (for example, `data.manifest.json` when `outputDir` is `data`) and prints a stable `GENESIS_MANIFEST=...` line at the end of generation. Only set `manifestPath` when you need a custom integration path.
+
+`.validate()` is optional. It is meant for extra guardrails when you want Genesis to reject invalid generated inputs before running the standard solution. If your generator logic is already fully trusted, you can omit it.
 
 ##### **`.generate(): Promise<void>`**
 

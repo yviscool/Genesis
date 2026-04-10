@@ -1,70 +1,128 @@
-// src/formatter.ts
+import crypto from 'node:crypto';
+import { once } from 'node:events';
+import { createWriteStream } from 'node:fs';
+import { finished } from 'node:stream/promises';
 
-/**
- * 格式化返回值为输入文件内容。
- * 
- * ## 核心规则（无歧义版）
- * 
- * 顶层数组的每个元素代表一行：
- * ```
- * return [元素1, 元素2, ..., 元素N]
- *        ↓       ↓           ↓
- *        行1     行2         行N
- * ```
- * 
- * 每个元素的转换规则：
- * - 单值 (number/string/boolean) → 直接转字符串
- * - 一维数组 → 空格拼接为一行
- * - 二维数组 → 展开为多行（每个子数组空格拼接）
- * 
- * ## 示例
- * 
- * ```typescript
- * return [5, 3, [1, 2, 3]]     // → "5\n3\n1 2 3"
- * return [[n, m], grid]        // grid 是二维数组，会展开
- * return [[1,2,3]]             // → "1 2 3" (一行三个数)
- * return [1, 2, 3]             // → "1\n2\n3" (三行)
- * return ['.##.', '#..#']      // → ".##.\n#..#" (两行字符串)
- * ```
- *
- * @param data - 生成器函数的返回值
- * @returns 格式化后的字符串，可直接写入 .in 文件
- */
-export function formatData(data: any): string {
-  // 非数组：直接转字符串（边界情况）
-  if (!Array.isArray(data)) {
-    return data == null ? '' : String(data);
-  }
+export interface WrittenFormattedData {
+  bytesWritten: number;
+  lineCount: number;
+  sha256: string;
+}
 
-  const lines: string[] = [];
+export class FormattedDataWriteError extends Error {
+  kind: 'formatter' | 'io';
 
-  for (const element of data) {
-    if (element == null) {
-      // null/undefined → 空行
-      lines.push('');
-    } else if (Array.isArray(element)) {
-      // 检查是否为二维数组：遍历检查是否有任意子元素是数组
-      const is2DArray = element.some(sub => Array.isArray(sub));
-      if (is2DArray) {
-        // 二维数组：展开为多行，安全处理稀疏数组
-        for (const row of element) {
-          if (Array.isArray(row)) {
-            lines.push(row.join(' '));
-          } else if (row != null) {
-            lines.push(String(row));
-          } else {
-            lines.push('');
-          }
-        }
-      } else {
-        // 一维数组：空格拼接为一行
-        lines.push(element.join(' '));
-      }
-    } else {
-      // 单值：直接转字符串
-      lines.push(String(element));
+  constructor(kind: 'formatter' | 'io', message: string, cause?: unknown) {
+    super(message);
+    this.name = 'FormattedDataWriteError';
+    this.kind = kind;
+    if (cause !== undefined) {
+      (this as Error & { cause?: unknown }).cause = cause;
     }
   }
+}
 
-  return lines.join('\n');
+export function formatData(data: any): string {
+  return Array.from(iterateFormattedLines(data)).join('\n');
+}
+
+export async function writeFormattedData(filePath: string, data: any): Promise<WrittenFormattedData> {
+  const output = createWriteStream(filePath, { encoding: 'utf8' });
+  const hash = crypto.createHash('sha256');
+  let bytesWritten = 0;
+  let lineCount = 0;
+  let firstLine = true;
+
+  const writeChunk = async (chunk: string): Promise<void> => {
+    if (chunk.length === 0) {
+      return;
+    }
+
+    bytesWritten += Buffer.byteLength(chunk);
+    hash.update(chunk, 'utf8');
+    if (!output.write(chunk)) {
+      await once(output, 'drain');
+    }
+  };
+
+  try {
+    for (const line of iterateFormattedLines(data)) {
+      const chunk = firstLine ? line : `\n${line}`;
+      firstLine = false;
+      lineCount++;
+      await writeChunk(chunk);
+    }
+  } catch (error) {
+    output.destroy();
+    throw new FormattedDataWriteError(classifyWriteError(error), getErrorMessage(error), error);
+  }
+
+  output.end();
+
+  try {
+    await finished(output);
+  } catch (error) {
+    throw new FormattedDataWriteError('io', getErrorMessage(error), error);
+  }
+
+  return {
+    bytesWritten,
+    lineCount,
+    sha256: hash.digest('hex'),
+  };
+}
+
+function* iterateFormattedLines(data: any): Generator<string> {
+  if (!Array.isArray(data)) {
+    yield data == null ? '' : String(data);
+    return;
+  }
+
+  for (const element of data) {
+    yield* iterateFormattedElement(element);
+  }
+}
+
+function* iterateFormattedElement(element: any): Generator<string> {
+  if (element == null) {
+    yield '';
+    return;
+  }
+
+  if (!Array.isArray(element)) {
+    yield String(element);
+    return;
+  }
+
+  const is2DArray = element.some(sub => Array.isArray(sub));
+  if (!is2DArray) {
+    yield element.join(' ');
+    return;
+  }
+
+  for (const row of element) {
+    if (Array.isArray(row)) {
+      yield row.join(' ');
+    } else if (row != null) {
+      yield String(row);
+    } else {
+      yield '';
+    }
+  }
+}
+
+function classifyWriteError(error: unknown): 'formatter' | 'io' {
+  if (typeof error === 'object' && error !== null && 'code' in error) {
+    return 'io';
+  }
+
+  return 'formatter';
+}
+
+function getErrorMessage(error: unknown): string {
+  if (error instanceof Error && error.message) {
+    return error.message;
+  }
+
+  return String(error);
 }

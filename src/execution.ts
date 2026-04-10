@@ -1,22 +1,22 @@
-// src/execution.ts
-
-import { consola } from 'consola';
-import ora from 'ora';
-import { execa, execaCommand } from 'execa';
+import crypto from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import crypto from 'node:crypto';
+import { consola } from 'consola';
+import { execa } from 'execa';
+import ora from 'ora';
 import { green } from 'picocolors';
-import { type GenesisConfig } from './types';
 import { detectLanguage, type LanguageInfo } from './language';
 import { t } from './i18n';
-
-// =============================================================================
-// --- 常量 & 类型定义 ---
-// =============================================================================
+import { type GenesisConfig, type OjProfile } from './types';
 
 export const GENESIS_CACHE_DIR = '.genesis';
 const CACHE_FILE = path.join(GENESIS_CACHE_DIR, 'cache.json');
+const DEFAULT_WINDOWS_CPP_STACK_SIZE_BYTES = 16 * 1024 * 1024;
+
+const DEFAULT_COMPILER_FLAGS: Record<string, string[]> = {
+  cpp: ['-O2', '-std=c++17', '-Wall'],
+  rust: ['-C', 'opt-level=2'],
+};
 
 interface CacheMetadata {
   [cacheKey: string]: {
@@ -25,24 +25,32 @@ interface CacheMetadata {
   };
 }
 
-export interface ExecutionResult {
-  runArgs: string[];
-  executablePath: string; // 对于编译型语言，这是二进制文件的路径；对于解释型语言，这是源文件路径。
+export interface ExecutionConfig extends Pick<GenesisConfig, 'compiler' | 'compilerFlags' | 'ojProfile' | 'stackSizeBytes'> {}
+
+export interface ResolvedCompiler {
+  command: string;
+  inlineFlags: string[];
+  displayName: string;
 }
 
-// =============================================================================
-// --- 主执行协调器 ---
-// =============================================================================
+export interface ExecutionResult {
+  runArgs: string[];
+  executablePath: string;
+}
 
-/**
- * (协调器) 准备待执行的源文件。
- * 对于编译型语言，这涉及缓存检查和重新编译。
- * 对于解释型语言，它负责识别正确的运行时环境。
- * @returns {Promise<ExecutionResult | null>} 包含运行命令和参数的对象，如果失败则返回 null。
- */
+export interface CompilationProfileContext {
+  compilerVersion?: string | null;
+  platform?: NodeJS.Platform;
+  arch?: string;
+  ojProfile?: OjProfile;
+  stackSizeBytes?: number;
+}
+
+type CppToolchain = 'gnu' | 'msvc' | 'unknown';
+
 export async function prepareForExecution(
   sourceFile: string,
-  config: Pick<GenesisConfig, 'compiler' | 'compilerFlags'>
+  config: ExecutionConfig
 ): Promise<ExecutionResult | null> {
   const lang = detectLanguage(sourceFile);
   if (!lang) {
@@ -52,18 +60,13 @@ export async function prepareForExecution(
 
   if (lang.type === 'interpreted') {
     return handleInterpretedLanguage(sourceFile, lang);
-  } else {
-    return handleCompiledLanguage(sourceFile, lang, config);
   }
-}
 
-// =============================================================================
-// --- 解释型语言逻辑 ---
-// =============================================================================
+  return handleCompiledLanguage(sourceFile, lang, config);
+}
 
 async function handleInterpretedLanguage(sourceFile: string, lang: LanguageInfo): Promise<ExecutionResult | null> {
   let runtime: string | null = null;
-  const args: string[] = [];
 
   switch (lang.id) {
     case 'python':
@@ -82,22 +85,16 @@ async function handleInterpretedLanguage(sourceFile: string, lang: LanguageInfo)
     return null;
   }
 
-  args.push(sourceFile);
   return {
-    runArgs: [runtime, ...args],
+    runArgs: [runtime, sourceFile],
     executablePath: sourceFile,
   };
 }
 
-// =============================================================================
-// --- 编译型语言逻辑 ---
-// =============================================================================
-
-
 async function handleCompiledLanguage(
   sourceFile: string,
   lang: LanguageInfo,
-  config: Pick<GenesisConfig, 'compiler' | 'compilerFlags'>
+  config: ExecutionConfig
 ): Promise<ExecutionResult | null> {
   const compiler = await resolveCompiler(lang, config.compiler);
   if (!compiler) {
@@ -105,22 +102,30 @@ async function handleCompiledLanguage(
     return null;
   }
 
-  // D2: 获取并显示编译器版本
-  const version = await getCompilerVersion(compiler);
-  if (version) {
-    consola.info(t('compilation.usingCompiler', `${compiler} ${green(version)}`));
+  const compilerVersion = await getCompilerVersion(compiler);
+  if (compilerVersion) {
+    consola.info(t('compilation.usingCompiler', `${compiler.displayName} ${green(compilerVersion)}`));
   } else {
-    consola.info(t('compilation.usingCompiler', compiler));
+    consola.info(t('compilation.usingCompiler', compiler.displayName));
   }
 
-  const profile = await getCompilationProfile(sourceFile, compiler, lang, config.compilerFlags);
-  const cacheKey = `${sourceFile}-${compiler}`;
+  const profileContext: CompilationProfileContext = {
+    compilerVersion,
+    platform: process.platform,
+    arch: process.arch,
+    ojProfile: config.ojProfile,
+    stackSizeBytes: config.stackSizeBytes,
+  };
+  const profile = await getCompilationProfile(sourceFile, compiler, lang, config.compilerFlags, profileContext);
+  const cacheKey = `${sourceFile}-${compiler.displayName}-${process.platform}-${process.arch}`;
 
   const cachedExecutable = await findCachedExecutable(cacheKey, profile.hash);
   if (cachedExecutable) {
     consola.info(t('compilation.hashMatch', sourceFile));
-    const runArgs = getRunCommand(cachedExecutable, sourceFile, lang);
-    return { runArgs, executablePath: cachedExecutable };
+    return {
+      runArgs: getRunCommand(cachedExecutable, sourceFile, lang),
+      executablePath: cachedExecutable,
+    };
   }
 
   const executablePath = await executeCompilation(sourceFile, compiler, profile, lang, cacheKey);
@@ -128,129 +133,330 @@ async function handleCompiledLanguage(
     return null;
   }
 
-  const runArgs = getRunCommand(executablePath, sourceFile, lang);
-  return { runArgs, executablePath };
+  return {
+    runArgs: getRunCommand(executablePath, sourceFile, lang),
+    executablePath,
+  };
 }
 
 function getRunCommand(executablePath: string, sourceFile: string, lang: LanguageInfo): string[] {
   if (lang.id === 'java') {
-    const dir = path.dirname(executablePath); // .class 文件在缓存目录中
     const className = path.basename(sourceFile, '.java');
-    return ['java', '-cp', dir, className];
+    return ['java', '-cp', executablePath, className];
   }
+
   return [executablePath];
 }
 
-// =============================================================================
-// --- 编译器 & 配置文件辅助函数 ---
-// =============================================================================
+export async function resolveCompiler(lang: LanguageInfo, userCompiler?: string): Promise<ResolvedCompiler | null> {
+  if (userCompiler) {
+    const parts = splitCommandString(userCompiler);
+    if (parts.length === 0) {
+      return null;
+    }
 
-async function resolveCompiler(lang: LanguageInfo, userCompiler?: string): Promise<string | null> {
-  if (userCompiler) return userCompiler;
+    const [command, ...inlineFlags] = parts;
+    return {
+      command,
+      inlineFlags,
+      displayName: parts.join(' '),
+    };
+  }
 
-  const compilers: { [langId: string]: string[] } = {
+  const compilers: Record<string, string[]> = {
     cpp: ['g++', 'clang++'],
     go: ['go'],
     rust: ['rustc'],
     java: ['javac'],
   };
 
-  return findRuntime(compilers[lang.id] || []);
+  const command = await findRuntime(compilers[lang.id] || []);
+  if (!command) {
+    return null;
+  }
+
+  return {
+    command,
+    inlineFlags: [],
+    displayName: command,
+  };
 }
 
-async function getCompilationProfile(
+export async function getCompilationProfile(
   sourceFile: string,
-  compiler: string,
+  compiler: ResolvedCompiler,
   lang: LanguageInfo,
-  userFlags: string[] = []
+  userFlags: string[] = [],
+  context: CompilationProfileContext = {}
 ): Promise<{ hash: string, flags: string[] }> {
-  const defaultFlags: { [langId: string]: string[] } = {
-    cpp: ['-O2', '-std=c++17', '-Wall'],
-    rust: ['-C', 'opt-level=2'],
-  };
-  const baseFlags = defaultFlags[lang.id] || [];
-  const finalFlags = [...baseFlags, ...userFlags];
+  const finalFlags = buildCompilerFlags(lang, compiler.command, compiler.inlineFlags, userFlags, context);
 
   await fs.mkdir(GENESIS_CACHE_DIR, { recursive: true });
-  const sourceContent = await fs.readFile(sourceFile);
-  const uniqueProfile = sourceContent.toString() + compiler + finalFlags.join('');
-  const currentHash = crypto.createHash('sha256').update(uniqueProfile).digest('hex');
+  const sourceContent = await fs.readFile(sourceFile, 'utf8');
+  const fingerprint = buildCompilationFingerprint(sourceContent, compiler, finalFlags, context);
+  const hash = crypto.createHash('sha256').update(fingerprint).digest('hex');
 
-  return { hash: currentHash, flags: finalFlags };
+  return { hash, flags: finalFlags };
 }
 
-// =============================================================================
-// --- 编译 & 缓存 ---
-// =============================================================================
+export function buildCompilationFingerprint(
+  sourceContent: string,
+  compiler: ResolvedCompiler,
+  finalFlags: string[],
+  context: CompilationProfileContext = {}
+): string {
+  return [
+    sourceContent,
+    compiler.displayName,
+    context.compilerVersion ?? 'unknown',
+    context.platform ?? process.platform,
+    context.arch ?? process.arch,
+    finalFlags.join('\0'),
+  ].join('\0');
+}
+
+export function buildCompilerFlags(
+  lang: LanguageInfo,
+  compilerCommand: string,
+  inlineFlags: string[] = [],
+  userFlags: string[] = [],
+  context: CompilationProfileContext = {}
+): string[] {
+  const baseFlags = DEFAULT_COMPILER_FLAGS[lang.id] || [];
+  const explicitFlags = [...inlineFlags, ...userFlags];
+  const automaticFlags = getAutomaticCompilerFlags(lang, compilerCommand, explicitFlags, context);
+
+  return [...baseFlags, ...automaticFlags, ...userFlags];
+}
+
+function getAutomaticCompilerFlags(
+  lang: LanguageInfo,
+  compilerCommand: string,
+  explicitFlags: string[],
+  context: CompilationProfileContext = {}
+): string[] {
+  const platform = context.platform ?? process.platform;
+  if (lang.id !== 'cpp' || platform !== 'win32') {
+    return [];
+  }
+
+  if (hasExplicitWindowsStackFlag(explicitFlags)) {
+    return [];
+  }
+
+  const stackSizeBytes = resolveDesiredStackSizeBytes(context);
+  if (!stackSizeBytes) {
+    return [];
+  }
+
+  return getWindowsStackFlags(compilerCommand, stackSizeBytes);
+}
+
+function resolveDesiredStackSizeBytes(context: CompilationProfileContext): number | null {
+  if (isValidStackSize(context.stackSizeBytes)) {
+    return Math.floor(context.stackSizeBytes!);
+  }
+
+  const ojProfile = context.ojProfile ?? 'auto';
+  if (ojProfile === 'none' || ojProfile === 'windows') {
+    return null;
+  }
+
+  return DEFAULT_WINDOWS_CPP_STACK_SIZE_BYTES;
+}
+
+function isValidStackSize(stackSizeBytes?: number): boolean {
+  return typeof stackSizeBytes === 'number'
+    && Number.isFinite(stackSizeBytes)
+    && stackSizeBytes > 0;
+}
+
+function getWindowsStackFlags(compilerCommand: string, stackSizeBytes: number): string[] {
+  const toolchain = detectCppToolchain(compilerCommand);
+
+  if (toolchain === 'msvc') {
+    return ['/link', `/STACK:${stackSizeBytes}`];
+  }
+
+  if (toolchain === 'gnu') {
+    return [`-Wl,--stack,${stackSizeBytes}`];
+  }
+
+  return [];
+}
+
+function detectCppToolchain(compilerCommand: string): CppToolchain {
+  const compilerName = path.basename(compilerCommand).toLowerCase();
+
+  if (
+    compilerName === 'cl'
+    || compilerName === 'cl.exe'
+    || compilerName === 'clang-cl'
+    || compilerName === 'clang-cl.exe'
+  ) {
+    return 'msvc';
+  }
+
+  if (
+    compilerName === 'g++'
+    || compilerName === 'g++.exe'
+    || compilerName === 'c++'
+    || compilerName === 'c++.exe'
+    || compilerName.includes('g++')
+    || compilerName.includes('clang++')
+  ) {
+    return 'gnu';
+  }
+
+  return 'unknown';
+}
+
+function hasExplicitWindowsStackFlag(flags: string[]): boolean {
+  for (let index = 0; index < flags.length; index++) {
+    const current = flags[index]?.toLowerCase() || '';
+    const next = flags[index + 1]?.toLowerCase() || '';
+
+    if (isWindowsStackFlag(current)) {
+      return true;
+    }
+
+    if ((current === '-xlinker' || current === '/link') && isWindowsStackFlag(next)) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+function isWindowsStackFlag(flag: string): boolean {
+  return /(?:^|,)--stack(?:[=,]|$)/.test(flag) || /^\/stack:/.test(flag);
+}
+
+export function splitCommandString(commandLine: string): string[] {
+  const tokens: string[] = [];
+  let current = '';
+  let quote: '"' | "'" | null = null;
+
+  for (let index = 0; index < commandLine.length; index++) {
+    const char = commandLine[index];
+    const next = commandLine[index + 1];
+
+    if (char === '\\' && next && (next === quote || next === '"' || next === "'" || next === '\\')) {
+      current += next;
+      index++;
+      continue;
+    }
+
+    if (quote) {
+      if (char === quote) {
+        quote = null;
+      } else {
+        current += char;
+      }
+      continue;
+    }
+
+    if (char === '"' || char === "'") {
+      quote = char;
+      continue;
+    }
+
+    if (/\s/.test(char)) {
+      if (current) {
+        tokens.push(current);
+        current = '';
+      }
+      continue;
+    }
+
+    current += char;
+  }
+
+  if (current) {
+    tokens.push(current);
+  }
+
+  return tokens;
+}
 
 async function findCachedExecutable(cacheKey: string, currentHash: string): Promise<string | null> {
   const cache = await readCache();
   const entry = cache[cacheKey];
+
   if (entry && entry.hash === currentHash) {
     try {
-      // 对于 Java，executablePath 是包含 .class 文件的目录
       await fs.access(entry.executablePath);
       return entry.executablePath;
     } catch {
       consola.warn(t('compilation.cacheMissing'));
     }
   }
+
   return null;
 }
 
 async function executeCompilation(
   sourceFile: string,
-  compiler: string,
+  compiler: ResolvedCompiler,
   profile: { hash: string, flags: string[] },
   lang: LanguageInfo,
   cacheKey: string
 ): Promise<string | null> {
-  const spinner = ora(t('compilation.compiling', sourceFile, compiler)).start();
+  const spinner = ora(t('compilation.compiling', sourceFile, compiler.displayName)).start();
+  const { command, args, executablePath } = getCompilationCommand(sourceFile, compiler, profile.flags, lang, profile.hash);
 
-  const getCommand = (): { command: string, args: string[], executablePath: string } => {
-    const baseName = path.parse(sourceFile).name;
-    const hashSuffix = profile.hash.substring(0, 8);
-
-    if (lang.id === 'java') {
-      // 对于 Java，编译到缓存目录，但不重命名 class 文件
-      const outputDir = path.join(GENESIS_CACHE_DIR, `${baseName}-${hashSuffix}`);
-      return {
-        command: compiler,
-        args: [...profile.flags, '-d', outputDir, sourceFile],
-        executablePath: outputDir, // "可执行文件" 是目录
-      };
-    }
-
-    const exeSuffix = process.platform === 'win32' ? '.exe' : '';
-    const executablePath = path.join(GENESIS_CACHE_DIR, `${baseName}-${hashSuffix}${exeSuffix}`);
-    const args = [sourceFile, '-o', executablePath, ...profile.flags];
-
-    if (lang.id === 'go') {
-      return { command: compiler, args: ['build', '-o', executablePath, sourceFile], executablePath };
-    }
-
-    return { command: compiler, args, executablePath };
-  };
-
-  const { command, args, executablePath } = getCommand();
   try {
-    // Java 需要在编译前确保输出目录存在
     if (lang.id === 'java') {
       await fs.mkdir(executablePath, { recursive: true });
     }
+
     await execa(command, args);
     spinner.succeed(t('compilation.compiled', sourceFile));
-
     await updateCache(cacheKey, profile.hash, executablePath);
     return executablePath;
   } catch (error: any) {
     spinner.fail(t('compilation.compileFailed', sourceFile));
-    // 导入 formatCompilerError 后在这里使用
     const { formatCompilerError } = await import('./error-formatter');
-    const formattedError = formatCompilerError(error.stderr || error.message, sourceFile);
-    consola.error(formattedError);
+    consola.error(formatCompilerError(error.stderr || error.message, sourceFile));
     return null;
   }
+}
+
+function getCompilationCommand(
+  sourceFile: string,
+  compiler: ResolvedCompiler,
+  flags: string[],
+  lang: LanguageInfo,
+  hash: string
+): { command: string, args: string[], executablePath: string } {
+  const baseName = path.parse(sourceFile).name;
+  const hashSuffix = hash.substring(0, 8);
+
+  if (lang.id === 'java') {
+    const outputDir = path.join(GENESIS_CACHE_DIR, `${baseName}-${hashSuffix}`);
+    return {
+      command: compiler.command,
+      args: [...compiler.inlineFlags, ...flags, '-d', outputDir, sourceFile],
+      executablePath: outputDir,
+    };
+  }
+
+  const exeSuffix = process.platform === 'win32' ? '.exe' : '';
+  const executablePath = path.join(GENESIS_CACHE_DIR, `${baseName}-${hashSuffix}${exeSuffix}`);
+
+  if (lang.id === 'go') {
+    return {
+      command: compiler.command,
+      args: [...compiler.inlineFlags, 'build', ...flags, '-o', executablePath, sourceFile],
+      executablePath,
+    };
+  }
+
+  return {
+    command: compiler.command,
+    args: [...compiler.inlineFlags, sourceFile, '-o', executablePath, ...flags],
+    executablePath,
+  };
 }
 
 async function readCache(): Promise<CacheMetadata> {
@@ -267,67 +473,60 @@ async function updateCache(cacheKey: string, hash: string, executablePath: strin
   await fs.writeFile(CACHE_FILE, JSON.stringify(cache, null, 2));
 }
 
-// =============================================================================
-// --- 系统运行时工具 ---
-// =============================================================================
-
 async function findRuntime(commands: readonly string[]): Promise<string | null> {
   for (const cmd of commands) {
     try {
-      // 对 'go' 命令的特殊处理
       if (cmd === 'go') {
-        await execaCommand('go version'); // 'go' 需要 'version' 子命令
+        await execa(cmd, ['version']);
       } else {
-        // 对于其他命令，先尝试 '--version'，然后 '-v'
         try {
-          await execaCommand(`${cmd} --version`);
+          await execa(cmd, ['--version']);
         } catch {
-          await execaCommand(`${cmd} -v`); // 回退到 -v
+          await execa(cmd, ['-v']);
         }
       }
+
       return cmd;
-    } catch (error) {
-      // console.error(`Failed to run version check for '${cmd}':`, error); // 调试用
-      // 如果失败则尝试下一个命令
+    } catch {
+      // Try the next candidate.
     }
   }
+
   return null;
 }
 
-/**
- * D2: 获取编译器版本号
- */
-async function getCompilerVersion(compiler: string): Promise<string | null> {
+async function getCompilerVersion(compiler: ResolvedCompiler): Promise<string | null> {
   try {
     let stdout: string;
+    const compilerName = path.basename(compiler.command).toLowerCase();
 
-    if (compiler === 'go') {
-      const result = await execaCommand('go version');
+    if (compilerName === 'go' || compilerName === 'go.exe') {
+      const result = await execa(compiler.command, [...compiler.inlineFlags, 'version']);
       stdout = result.stdout;
-      // go version go1.21.0 linux/amd64
-      const match = stdout.match(/go(\d+\.\d+\.\d+)/);
-      return match ? match[1] : null;
-    } else if (compiler === 'javac') {
-      const result = await execaCommand('javac -version');
-      stdout = result.stdout || result.stderr;
-      // javac 17.0.1
-      const match = stdout.match(/javac\s+(\S+)/);
-      return match ? match[1] : null;
-    } else if (compiler === 'rustc') {
-      const result = await execaCommand('rustc --version');
-      stdout = result.stdout;
-      // rustc 1.70.0 (90c541806 2023-05-31)
-      const match = stdout.match(/rustc\s+(\S+)/);
-      return match ? match[1] : null;
-    } else {
-      // g++, clang++ 等
-      const result = await execaCommand(`${compiler} --version`);
-      stdout = result.stdout;
-      // g++ (Ubuntu 13.2.0-4ubuntu3) 13.2.0
-      // clang version 17.0.0
-      const match = stdout.match(/(\d+\.\d+\.\d+|\d+\.\d+)/);
-      return match ? match[1] : null;
+      return stdout.match(/go(\d+\.\d+\.\d+)/)?.[1] ?? null;
     }
+
+    if (compilerName === 'javac' || compilerName === 'javac.exe') {
+      const result = await execa(compiler.command, [...compiler.inlineFlags, '-version']);
+      stdout = result.stdout || result.stderr;
+      return stdout.match(/javac\s+(\S+)/)?.[1] ?? null;
+    }
+
+    if (compilerName === 'rustc' || compilerName === 'rustc.exe') {
+      const result = await execa(compiler.command, [...compiler.inlineFlags, '--version']);
+      stdout = result.stdout;
+      return stdout.match(/rustc\s+(\S+)/)?.[1] ?? null;
+    }
+
+    if (compilerName === 'cl' || compilerName === 'cl.exe') {
+      const result = await execa(compiler.command, [...compiler.inlineFlags], { reject: false });
+      stdout = `${result.stdout}\n${result.stderr}`;
+      return stdout.match(/version\s+(\S+)/i)?.[1] ?? null;
+    }
+
+    const result = await execa(compiler.command, [...compiler.inlineFlags, '--version']);
+    stdout = result.stdout;
+    return stdout.match(/(\d+\.\d+\.\d+|\d+\.\d+)/)?.[1] ?? null;
   } catch {
     return null;
   }
@@ -356,7 +555,7 @@ function getCompilerHelpMessage(lang: LanguageInfo): string {
   };
 
   const langCommands = installCommands[lang.id] || {};
-  const command = langCommands[platform] || langCommands['linux'] || langCommands['default'] || '';
+  const command = langCommands[platform] || langCommands.linux || langCommands.default || '';
 
   let message = `\n${t('compiler.notFoundNew', lang.name)}\n\n`;
   message += `${t('compiler.installHint')}\n\n`;

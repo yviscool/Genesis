@@ -26,7 +26,7 @@ export function sparse(count: number, min: number, max: number, gap: number): nu
     }
     const baseValues = sorted(count, 0, max - min - (count - 1) * gap);
     const sparseValues = baseValues.map((val, i) => min + val + i * gap);
-    return core.shuffle(sparseValues);
+    return core.shuffleInPlace(sparseValues);
 }
 
 export function partition(count: number, sum: number, options: { minVal?: number } = {}): number[] {
@@ -41,7 +41,7 @@ export function partition(count: number, sum: number, options: { minVal?: number
     for (let i = 0; i < count; i++) {
         parts.push(points[i + 1] - points[i] + minVal);
     }
-    return core.shuffle(parts);
+    return core.shuffleInPlace(parts);
 }
 
 export function matrix<T>(rows: number, cols: number, cellGenerator: (r: number, c: number) => T): T[][] {
@@ -165,7 +165,7 @@ export function intervals(n: number, min: number, max: number, options: { overla
 
 export function permutation(n: number, oneBased = true): number[] {
     const arr = Array.from({ length: n }, (_, i) => (oneBased ? i + 1 : i));
-    return core.shuffle(arr);
+    return core.shuffleInPlace(arr);
 }
 
 export { chunk } from './core';

@@ -100,6 +100,8 @@ export class GenesisChecker {
     const compilerConfig = {
       compiler: this.config.compiler,
       compilerFlags: this.config.compilerFlags,
+      ojProfile: this.config.ojProfile,
+      stackSizeBytes: this.config.stackSizeBytes,
     };
 
     const stdExec = await prepareForExecution(std, compilerConfig);

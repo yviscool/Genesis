@@ -24,16 +24,15 @@ export function tree(n: number, options: TreeOptions = {}): number[][] {
         for (let i = 1; i < n; i++) edges.push([nodes[i], nodes[core.int(0, i - 1)]]);
     }
 
-    let result = core.shuffle(edges);
+    const result = core.shuffleInPlace(edges);
     if (weighted) {
         const [minW, maxW] = Array.isArray(weighted) ? weighted : [1, 1_000_000_000];
         result.forEach(e => e.push(core.int(minW, maxW)));
     }
     if (oneBased) {
-        result = result.map(e => {
-            const ne = [e[0] + 1, e[1] + 1];
-            if (e.length > 2) ne.push(e[2]);
-            return ne;
+        result.forEach(e => {
+            e[0] += 1;
+            e[1] += 1;
         });
     }
     return result;
@@ -69,7 +68,7 @@ export function graph(n: number, m: number, options: GraphOptions = {}): number[
             result.forEach(e => e.push(core.int(minW, maxW)));
         }
         if (oneBased) result = result.map(e => e.map((v, i) => i < 2 ? v + 1 : v));
-        return core.shuffle(result);
+        return core.shuffleInPlace(result);
     }
 
     // 完全图
@@ -87,7 +86,7 @@ export function graph(n: number, m: number, options: GraphOptions = {}): number[
             result.forEach(e => e.push(core.int(minW, maxW)));
         }
         if (oneBased) result = result.map(e => e.map((v, i) => i < 2 ? v + 1 : v));
-        return core.shuffle(result);
+        return core.shuffleInPlace(result);
     }
 
     // 树
@@ -324,7 +323,7 @@ export function graph(n: number, m: number, options: GraphOptions = {}): number[
     if (oneBased) {
         result = result.map(e => e.map((v, i) => i < 2 ? v + 1 : v));
     }
-    return core.shuffle(result);
+    return core.shuffleInPlace(result);
 }
 
 export function binaryTree(n: number, options: BinaryTreeOptions = {}): { edges: number[][]; root: number } {
@@ -365,5 +364,5 @@ export function binaryTree(n: number, options: BinaryTreeOptions = {}): { edges:
         }
     }
 
-    return { edges: core.shuffle(edges), root: offset };
+    return { edges: core.shuffleInPlace(edges), root: offset };
 }

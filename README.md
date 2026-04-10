@@ -252,10 +252,22 @@ Maker.configure({
   solution: 'main.go',    // 指定标程文件名
   outputDir: 'testdata',  // 指定输出目录 (默认: 'data')
   compiler: 'g++-12',     // 为编译型语言手动指定编译器 (默认: 自动探测)
+  compilerFlags: ['-std=c++20'], // 额外编译/链接参数请放这里
+  caseConcurrency: 4,     // 可选：生成阶段并发上限
+  ojProfile: 'linux',     // 可选：按目标评测环境应用平台相关编译策略
+  stackSizeBytes: 1 << 24,// 可选：为支持的 Windows 工具链显式指定栈大小
   startFrom: 1,           // 文件编号起始值 (默认: 1)
   runTimeoutMs: 10000,    // 运行标程生成 .out 的超时 (默认: 10000ms)
 });
 ```
+
+在 Windows 下使用 `g++`/`clang++` 时，Genesis 会在你没有显式指定时自动补齐更接近 Linux 评测机的 C++ 栈大小 linker 参数。若需要自定义栈大小，请使用 `compilerFlags`，不要把参数直接拼进 `compiler`。
+
+对于大输入用例，Genesis 可能会根据输入规模和可用内存自动把实际生成并发降到 `caseConcurrency` 以下，以避免内存峰值过高。
+
+对于大多数工作流，默认配置已经足够。Genesis 默认会在 `outputDir` 同级生成一个 manifest 文件，例如当 `outputDir` 为 `data` 时，默认写入 `data.manifest.json`，并在生成结束后额外打印稳定的 `GENESIS_MANIFEST=...` 行，方便 AI 直接定位。只有在你需要自定义集成路径时，才需要显式设置 `manifestPath`。
+
+`.validate()` 是可选的进阶能力，用于在运行标程前额外拦截不合法输入。如果你已经完全信任自己的生成逻辑，可以不写它。
 
 ##### **`.generate(): Promise<void>`**
 

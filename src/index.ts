@@ -42,4 +42,14 @@ export function createChecker(): GenesisChecker {
 
 // 其他
 export { G } from './generator/index';
-export type { GenesisConfig, CheckerConfig, CompareMode, WeightOption } from './types';
+export type {
+  GenesisConfig,
+  CheckerConfig,
+  CompareMode,
+  WeightOption,
+  CaseMetadata,
+  MakerValidationContext,
+  MakerValidationResult,
+  MakerValidationReturn,
+  MakerValidator,
+} from './types';

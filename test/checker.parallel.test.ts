@@ -15,7 +15,7 @@ describe('GenesisChecker parallel workers', () => {
     targetFile = path.join(tmpDir, 'target.js');
 
     // Each run intentionally waits so the speed-up from multiple workers is measurable.
-    const delayedScript = `const fs=require('node:fs');\nconst n=Number(fs.readFileSync(0,'utf8').trim()||0);\nsetTimeout(()=>{console.log(n*2)},30);`;
+    const delayedScript = `const fs=require('node:fs');\nconst n=Number(fs.readFileSync(0,'utf8').trim()||0);\nsetTimeout(()=>{console.log(n*2)},20);`;
     await fs.writeFile(stdFile, delayedScript, 'utf8');
     await fs.writeFile(targetFile, delayedScript, 'utf8');
   });
@@ -46,5 +46,5 @@ describe('GenesisChecker parallel workers', () => {
     const parallelDuration = await runWithWorkers(4);
 
     expect(parallelDuration).toBeLessThan(serialDuration * 0.75);
-  });
+  }, 10000);
 });

@@ -53,6 +53,14 @@ export function int(min: number, max: number): number {
  */
 export function shuffle<T>(array: readonly T[]): T[] {
     const result = [...array];
+    return shuffleInPlace(result);
+}
+
+/**
+ * In-place Fisher-Yates shuffle for mutable arrays.
+ */
+export function shuffleInPlace<T>(array: T[]): T[] {
+    const result = array;
     for (let i = result.length - 1; i > 0; i--) {
         const j = int(0, i);
         [result[i], result[j]] = [result[j], result[i]];
@@ -95,4 +103,4 @@ export function chunk<T>(array: readonly T[], size: number): T[][] {
 }
 
 // 为了兼容旧代码，保留 core 对象形式
-export const core = { int, shuffle, sample, rand, withRng, resetRng };
+export const core = { int, shuffle, shuffleInPlace, sample, rand, withRng, resetRng };

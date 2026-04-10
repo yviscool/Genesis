@@ -43,7 +43,40 @@ export interface GenesisConfig {
    * @example ['-std=c++20']
    */
   compilerFlags?: string[];
+
+  /**
+   * Maximum number of generation workers.
+   * If `caseConcurrency` is also set, `caseConcurrency` takes precedence.
+   */
+  maxWorkers?: number;
+
+  /**
+   * Configurable generation concurrency.
+   * Genesis may still lower it automatically for large inputs or low free memory.
+   */
+  caseConcurrency?: number;
+
+  /**
+   * Preferred OJ environment profile for platform-specific compiler tweaks.
+   * `auto` keeps Genesis defaults. `none` disables automatic stack tuning.
+   */
+  ojProfile?: OjProfile;
+
+  /**
+   * Override stack size for compiled programs when a platform-specific stack flag is applicable.
+   * The value is expressed in bytes.
+   */
+  stackSizeBytes?: number;
+
+  /**
+   * Optional path for the machine-readable generation manifest.
+   * Defaults to a sibling file next to `outputDir`, such as `data.manifest.json`.
+   * Set to `false` to disable manifest output.
+   */
+  manifestPath?: string | false;
 }
+
+export type OjProfile = 'auto' | 'linux' | 'windows' | 'none';
 
 /**
  * 描述待生成的单个测试点的内部结构。
@@ -57,7 +90,40 @@ export interface Case {
    * 测试点的可选标签，用于日志输出，方便识别。
    */
   label?: string;
+  /**
+   * Optional machine-readable tags for downstream tooling.
+   */
+  tags?: string[];
 }
+
+export interface CaseMetadata {
+  label?: string;
+  tags?: string[];
+}
+
+export interface MakerValidationContext {
+  caseNumber: number;
+  label?: string;
+  tags: string[];
+  inputPath: string;
+  outputDir: string;
+}
+
+export interface MakerValidationResult {
+  ok: boolean;
+  reason?: string;
+}
+
+export type MakerValidationReturn =
+  | void
+  | boolean
+  | string
+  | MakerValidationResult;
+
+export type MakerValidator = (
+  data: any,
+  context: MakerValidationContext,
+) => MakerValidationReturn | Promise<MakerValidationReturn>;
 
 /**
  * 调试输出的配置选项。
@@ -203,6 +269,16 @@ export interface CheckerConfig {
    * 传递给编译器的额外参数/标志。
    */
   compilerFlags?: GenesisConfig['compilerFlags'];
+
+  /**
+   * Preferred OJ environment profile for platform-specific compiler tweaks.
+   */
+  ojProfile?: GenesisConfig['ojProfile'];
+
+  /**
+   * Override stack size for compiled programs when a platform-specific stack flag is applicable.
+   */
+  stackSizeBytes?: GenesisConfig['stackSizeBytes'];
 
   /**
    * 比对模式。
