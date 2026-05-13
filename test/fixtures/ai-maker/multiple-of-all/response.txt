@@ -1,0 +1,161 @@
+<<<SOLUTION_CODE>>>
+const values = require('node:fs').readFileSync(0, 'utf8').trim().split(/\s+/).map(Number);
+
+let index = 0;
+const t = values[index++] ?? 0;
+const output = [];
+
+for (let caseId = 0; caseId < t; caseId++) {
+  const n = values[index++] ?? 0;
+  const a = values.slice(index, index + n);
+  index += n;
+
+  let maxValue = 0;
+  for (const value of a) {
+    if (value > maxValue) maxValue = value;
+  }
+
+  let ok = true;
+  for (const value of a) {
+    if (maxValue % value !== 0) {
+      ok = false;
+      break;
+    }
+  }
+
+  output.push(ok ? 'Yes' : 'No');
+}
+
+process.stdout.write(output.join('\n'));
+<<<MAKER_TS>>>
+import { defineDataset, fmt } from 'genesis-kit';
+
+type TestCase = {
+  n: number;
+  a: number[];
+};
+
+type Input = {
+  tests: TestCase[];
+};
+
+function isPositiveInt(value: number): boolean {
+  return Number.isInteger(value) && value > 0;
+}
+
+function divisorsOf(value: number): number[] {
+  const divisors: number[] = [];
+  for (let d = 1; d * d <= value; d++) {
+    if (value % d !== 0) continue;
+    divisors.push(d);
+    if (d * d !== value) divisors.push(value / d);
+  }
+  return divisors.sort((a, b) => a - b);
+}
+
+export default defineDataset<Input>({
+  solution: 'std.js',
+  seed: 'ai-regression-multiple-of-all',
+  format: ({ tests }) => fmt.lines(
+    [tests.length],
+    ...tests.flatMap(({ n, a }) => [[n], a]),
+  ),
+  validate: ({ tests }) => {
+    if (!Array.isArray(tests)) return 'tests must be an array';
+    if (tests.length < 1 || tests.length > 10) return 't must be in [1, 10]';
+    for (const [testIndex, test] of tests.entries()) {
+      if (!isPositiveInt(test.n)) return `tests[${testIndex}].n must be a positive integer`;
+      if (test.n < 1 || test.n > 100000) return `tests[${testIndex}].n must be in [1, 100000]`;
+      if (!Array.isArray(test.a) || test.a.length !== test.n) return `tests[${testIndex}].a length mismatch`;
+      if (!test.a.every(isPositiveInt)) return `tests[${testIndex}].a must contain positive integers`;
+      if (test.a.some(value => value > 1000000000)) return `tests[${testIndex}].a values must be in [1, 1e9]`;
+    }
+    return true;
+  },
+  cases: [
+    {
+      name: 'sample',
+      tags: ['sample'],
+      input: {
+        tests: [
+          { n: 3, a: [1, 2, 4] },
+          { n: 5, a: [1, 2, 3, 4, 5] },
+        ],
+      },
+    },
+    {
+      name: 'clear-yes-cases',
+      tags: ['yes'],
+      input: {
+        tests: [
+          { n: 4, a: [1, 2, 4, 8] },
+          { n: 5, a: [6, 6, 3, 2, 1] },
+        ],
+      },
+    },
+    {
+      name: 'clear-no-cases',
+      tags: ['no'],
+      input: {
+        tests: [
+          { n: 3, a: [9, 3, 6] },
+          { n: 4, a: [2, 5, 10, 12] },
+        ],
+      },
+    },
+    {
+      name: 'large-values',
+      tags: ['values'],
+      input: {
+        tests: [
+          { n: 4, a: [1000000000, 500000000, 250000000, 125000000] },
+          { n: 3, a: [999999937, 2, 999999938] },
+        ],
+      },
+    },
+    {
+      name: 'generated-divisor-family',
+      tags: ['generated', 'yes'],
+      repeat: 1,
+      generate: ({ g }) => {
+        const buildYesCase = (): TestCase => {
+          const candidate = g.int(60, 840);
+          const divisors = divisorsOf(candidate);
+          const n = g.int(4, 8);
+          const a = g.array(n - 1, () => g.sample(divisors));
+          a.push(candidate);
+          return { n: a.length, a: g.shuffle(a) };
+        };
+
+        return {
+          tests: [
+            buildYesCase(),
+            buildYesCase(),
+          ],
+        };
+      },
+    },
+    {
+      name: 'generated-counterexample',
+      tags: ['generated', 'no'],
+      repeat: 1,
+      generate: ({ g }) => {
+        const buildNoCase = (): TestCase => {
+          const divisor = g.sample([11, 13, 17, 19, 23, 29, 31, 37, 41, 43]);
+          const candidate = divisor * g.int(2, 9) + 1;
+          const fillerCount = g.int(1, 4);
+          const fillers = g.array(fillerCount, () => 1);
+          const a = [candidate, divisor, ...fillers];
+          return { n: a.length, a: g.shuffle(a) };
+        };
+
+        return {
+          tests: [
+            buildNoCase(),
+            buildNoCase(),
+          ],
+        };
+      },
+    },
+  ],
+});

@@ -1,0 +1,47 @@
+<<<SOLUTION_CODE>>>
+const data = require('node:fs').readFileSync(0, 'utf8').trim().split(/\s+/).map(Number);
+
+const n = data[0] ?? 0;
+const m = data[1] ?? 0;
+const lines = [];
+
+for (let i = 1; i <= n; i++) {
+  const row = [];
+  for (let j = 1; j <= m; j++) {
+    row.push(String(i * j));
+  }
+  lines.push(row.join(' '));
+}
+
+process.stdout.write(lines.join('\n'));
+<<<MAKER_TS>>>
+import { defineDataset, fmt } from 'genesis-kit';
+
+type Input = {
+  n: number;
+  m: number;
+};
+
+function isInt(value: number): boolean {
+  return Number.isInteger(value);
+}
+
+export default defineDataset<Input>({
+  solution: 'std.js',
+  seed: 'ai-regression-arithmetic-matrix',
+  format: ({ n, m }) => fmt.line(n, m),
+  validate: ({ n, m }) => {
+    if (!isInt(n) || !isInt(m)) return 'n and m must be integers';
+    if (n < 1 || n > 50) return 'n must be in [1, 50]';
+    if (m < 1 || m > 50) return 'm must be in [1, 50]';
+    return true;
+  },
+  cases: [
+    { name: 'sample', tags: ['sample'], input: { n: 3, m: 4 } },
+    { name: 'single-cell', tags: ['edge'], input: { n: 1, m: 1 } },
+    { name: 'single-row', tags: ['shape'], input: { n: 1, m: 7 } },
+    { name: 'single-column', tags: ['shape'], input: { n: 8, m: 1 } },
+    { name: 'square-small', tags: ['square'], input: { n: 5, m: 5 } },
+    { name: 'max-rectangle', tags: ['max'], input: { n: 50, m: 50 } },
+  ],
+});

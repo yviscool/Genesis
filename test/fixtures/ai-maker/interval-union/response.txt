@@ -1,0 +1,140 @@
+<<<SOLUTION_CODE>>>
+const values = require('node:fs').readFileSync(0, 'utf8').trim().split(/\s+/).map(Number);
+
+let index = 0;
+const n = values[index++] ?? 0;
+const intervals = [];
+
+for (let i = 0; i < n; i++) {
+  const l = values[index++] ?? 0;
+  const r = values[index++] ?? 0;
+  intervals.push([l, r]);
+}
+
+intervals.sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+
+let answer = 0;
+let curL = 0;
+let curR = -1;
+
+for (const [l, r] of intervals) {
+  if (curR < l - 1) {
+    if (curR >= curL) answer += curR - curL + 1;
+    curL = l;
+    curR = r;
+  } else if (r > curR) {
+    curR = r;
+  }
+}
+
+if (curR >= curL) answer += curR - curL + 1;
+
+process.stdout.write(String(answer));
+<<<MAKER_TS>>>
+import { defineDataset, fmt } from 'genesis-kit';
+
+type Input = {
+  n: number;
+  intervals: number[][];
+};
+
+export default defineDataset<Input>({
+  solution: 'std.js',
+  seed: 'interval-union-dataset-v1',
+  format: ({ n, intervals }) => fmt.lines(
+    [n],
+    fmt.table(intervals),
+  ),
+  validate: ({ n, intervals }) => {
+    if (!Number.isInteger(n) || n < 1 || n > 100000) return 'n out of range';
+    if (!Array.isArray(intervals) || intervals.length !== n) return 'interval count must equal n';
+    for (const interval of intervals) {
+      if (!Array.isArray(interval) || interval.length !== 2) return 'each interval must contain two numbers';
+      const [l, r] = interval;
+      if (!Number.isInteger(l) || !Number.isInteger(r)) return 'interval endpoints must be integers';
+      if (l < 1 || r < 1 || l > 1000000000 || r > 1000000000) return 'interval endpoint out of range';
+      if (l > r) return 'interval must satisfy l <= r';
+    }
+    return true;
+  },
+  cases: [
+    {
+      name: 'single-point',
+      tags: ['edge'],
+      input: {
+        n: 1,
+        intervals: [[7, 7]],
+      },
+    },
+    {
+      name: 'sample',
+      tags: ['sample'],
+      input: {
+        n: 4,
+        intervals: [
+          [1, 3],
+          [2, 5],
+          [8, 8],
+          [10, 12],
+        ],
+      },
+    },
+    {
+      name: 'disjoint-sorted',
+      input: {
+        n: 5,
+        intervals: [
+          [1, 2],
+          [5, 5],
+          [8, 10],
+          [20, 25],
+          [30, 30],
+        ],
+      },
+    },
+    {
+      name: 'nested-and-overlapping',
+      input: {
+        n: 6,
+        intervals: [
+          [1, 10],
+          [2, 3],
+          [4, 7],
+          [6, 12],
+          [11, 15],
+          [14, 20],
+        ],
+      },
+    },
+    {
+      name: 'generated-overlap-heavy',
+      tags: ['random'],
+      repeat: 2,
+      generate: ({ g }) => {
+        const n = g.int(20, 60);
+        const intervals = g.intervals(n, 1, 1000, {
+          overlapping: true,
+          sorted: false,
+          minLen: 1,
+          maxLen: 80,
+        });
+        return { n, intervals };
+      },
+    },
+    {
+      name: 'generated-disjoint-large',
+      tags: ['random'],
+      generate: ({ g }) => {
+        const n = 100000;
+        const intervals = g.intervals(n, 1, 1000000000, {
+          overlapping: false,
+          sorted: false,
+          minLen: 1,
+          maxLen: 20,
+          allowGaps: true,
+        });
+        return { n, intervals };
+      },
+    },
+  ],
+});

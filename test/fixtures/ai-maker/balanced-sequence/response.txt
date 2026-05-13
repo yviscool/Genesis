@@ -1,0 +1,150 @@
+<<<SOLUTION_CODE>>>
+const values = require('node:fs').readFileSync(0, 'utf8').trim().split(/\s+/).map(Number);
+
+let index = 0;
+const t = values[index++] ?? 0;
+const output = [];
+
+for (let caseId = 0; caseId < t; caseId++) {
+  const n = values[index++] ?? 0;
+  const a = values.slice(index, index + n);
+  index += n;
+
+  let total = 0;
+  for (const value of a) total += value;
+
+  let prefix = 0;
+  let ok = false;
+  for (let i = 0; i < n - 1; i++) {
+    prefix += a[i];
+    if (prefix * 2 === total) {
+      ok = true;
+      break;
+    }
+  }
+
+  output.push(ok ? 'Yes' : 'No');
+}
+
+process.stdout.write(output.join('\n'));
+<<<MAKER_TS>>>
+import { defineDataset, fmt } from 'genesis-kit';
+
+type TestCase = {
+  n: number;
+  a: number[];
+};
+
+type Input = {
+  tests: TestCase[];
+};
+
+function isPositiveInt(value: number): boolean {
+  return Number.isInteger(value) && value > 0;
+}
+
+function isPositiveIntArray(values: number[]): boolean {
+  return values.every(isPositiveInt);
+}
+
+export default defineDataset<Input>({
+  solution: 'std.js',
+  seed: 'ai-regression-balanced-sequence',
+  format: ({ tests }) => fmt.lines(
+    [tests.length],
+    ...tests.flatMap(({ n, a }) => [[n], a]),
+  ),
+  validate: ({ tests }) => {
+    if (!Array.isArray(tests)) return 'tests must be an array';
+    if (tests.length < 2 || tests.length > 100) return 't must be in [2, 100]';
+    for (const [testIndex, test] of tests.entries()) {
+      if (!isPositiveInt(test.n)) return `tests[${testIndex}].n must be a positive integer`;
+      if (test.n < 3 || test.n > 10000) return `tests[${testIndex}].n must be in [3, 10000]`;
+      if (!Array.isArray(test.a) || test.a.length !== test.n) return `tests[${testIndex}].a length mismatch`;
+      if (!isPositiveIntArray(test.a)) return `tests[${testIndex}].a must contain positive integers`;
+      if (test.a.some(value => value > 10000)) return `tests[${testIndex}].a values must be in [1, 10000]`;
+    }
+    return true;
+  },
+  cases: [
+    {
+      name: 'sample',
+      tags: ['sample'],
+      input: {
+        tests: [
+          { n: 3, a: [1, 2, 3] },
+          { n: 4, a: [2, 3, 1, 4] },
+          { n: 5, a: [1, 2, 3, 4, 5] },
+        ],
+      },
+    },
+    {
+      name: 'small-clear-mix',
+      tags: ['small'],
+      input: {
+        tests: [
+          { n: 3, a: [1, 1, 2] },
+          { n: 4, a: [1, 1, 1, 1] },
+          { n: 5, a: [2, 1, 1, 2, 2] },
+        ],
+      },
+    },
+    {
+      name: 'late-split-and-no-split',
+      tags: ['structure'],
+      input: {
+        tests: [
+          { n: 5, a: [3, 1, 2, 1, 5] },
+          { n: 6, a: [2, 2, 2, 2, 2, 3] },
+        ],
+      },
+    },
+    {
+      name: 'near-upper-values',
+      tags: ['values'],
+      input: {
+        tests: [
+          { n: 4, a: [10000, 10000, 10000, 10000] },
+          { n: 3, a: [9999, 10000, 10000] },
+        ],
+      },
+    },
+    {
+      name: 'generated-mixed',
+      tags: ['generated'],
+      repeat: 2,
+      generate: ({ g }) => {
+        const buildBalanced = (): TestCase => {
+          const leftCount = g.int(1, 3);
+          const rightCount = g.int(2, 4);
+          const target = Math.max(leftCount, rightCount) + g.int(2, 20);
+          const left = g.partition(leftCount, target);
+          const right = g.partition(rightCount, target);
+          return {
+            n: left.length + right.length,
+            a: [...left, ...right],
+          };
+        };
+
+        const buildOddTotal = (): TestCase => {
+          const n = g.int(3, 7);
+          const a = g.array(n, () => g.int(1, 20));
+          const sum = a.reduce((acc, value) => acc + value, 0);
+          if (sum % 2 === 0) {
+            a[0] = Math.min(10000, a[0] + 1);
+          }
+          return { n, a };
+        };
+
+        return {
+          tests: [
+            buildBalanced(),
+            buildOddTotal(),
+            buildBalanced(),
+            buildOddTotal(),
+          ],
+        };
+      },
+    },
+  ],
+});

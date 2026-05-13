@@ -1,8 +1,13 @@
 import fs from 'node:fs/promises';
-import https from 'node:https';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { generateDatasetFromFile, type DatasetRunResult } from '../src/dataset-runner';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+import { type DatasetRunResult, generateDataset, loadDatasetFromFile, validateDataset } from '../src/dataset-runner';
+import {
+  type AiContractSelection,
+  renderAiGenesisContractDts,
+  resolveAiContractAllowance,
+  selectAiContract,
+} from '../src/ai-contract';
 
 type Lang = 'js' | 'cpp' | 'py';
 
@@ -10,6 +15,7 @@ type Options = {
   statementPath?: string;
   name?: string;
   solutionPath?: string;
+  mockResponseFile?: string;
   lang: Lang;
   repair: number;
   model: string;
@@ -31,11 +37,24 @@ type PromptContext = {
   lang: Lang;
 };
 
+type MakerIssue = {
+  code: string;
+  message: string;
+};
+
+class AiWorkflowError extends Error {
+  readonly issues: MakerIssue[];
+
+  constructor(issues: MakerIssue[]) {
+    super(formatIssues(issues));
+    this.issues = issues;
+  }
+}
+
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const baseUrl = (process.env.OPENAI_BASE_URL ?? 'https://api.asxs.top/v1').replace(/\/$/, '');
 const apiKey = process.env.OPENAI_API_KEY ?? process.env.ASXS_API_KEY;
 const defaultJobRoot = path.join(__dirname, '.ai-jobs');
-const contractPath = path.join(__dirname, 'ai-genesis-contract.md');
 
 const solutionFileByLang: Record<Lang, string> = {
   js: 'std.js',
@@ -65,6 +84,7 @@ const helpText = [
   'Options:',
   '--statement <file>   read the problem statement from file',
   '--solution <file>    use an existing reference solution',
+  '--mock-response-file <file>  skip network and use a canned AI response',
   '--name <job>         output folder name under examples/.ai-jobs',
   '--lang <js|cpp|py>   solution language when AI must generate one, default js',
   '--repair <n>         local repair attempts, default 1',
@@ -95,6 +115,11 @@ function parseArgs(argv: string[]): Options {
     }
     if (arg === '--solution' && next) {
       options.solutionPath = next;
+      index++;
+      continue;
+    }
+    if (arg === '--mock-response-file' && next) {
+      options.mockResponseFile = next;
       index++;
       continue;
     }
@@ -178,49 +203,33 @@ function extractText(payload: any): string {
 
 async function postJson(pathname: string, body: Record<string, unknown>): Promise<any> {
   const url = new URL(`${baseUrl}${pathname}`);
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(`${pathname} timed out after 30s`), 30000);
 
-  return new Promise((resolve, reject) => {
-    const request = https.request(
-      {
-        protocol: url.protocol,
-        hostname: url.hostname,
-        port: url.port || undefined,
-        path: `${url.pathname}${url.search}`,
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${apiKey}`,
-          'Content-Type': 'application/json',
-        },
+  try {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
       },
-      response => {
-        let data = '';
-        response.setEncoding('utf8');
-        response.on('data', chunk => {
-          data += chunk;
-        });
-        response.on('end', () => {
-          const status = response.statusCode ?? 0;
-          if (status < 200 || status >= 300) {
-            reject(new Error(`${pathname} failed: ${status} ${data}`));
-            return;
-          }
-
-          try {
-            resolve(JSON.parse(data));
-          } catch (error) {
-            reject(error);
-          }
-        });
-      },
-    );
-
-    request.setTimeout(30000, () => {
-      request.destroy(new Error(`${pathname} timed out after 30s`));
+      body: JSON.stringify(body),
+      signal: controller.signal,
     });
-    request.on('error', reject);
-    request.write(JSON.stringify(body));
-    request.end();
-  });
+    const text = await response.text();
+
+    if (!response.ok) {
+      throw new Error(`${pathname} failed: ${response.status} ${text}`);
+    }
+
+    try {
+      return JSON.parse(text);
+    } catch (error) {
+      throw new Error(`Invalid JSON from ${pathname}: ${error instanceof Error ? error.message : String(error)} | body=${text.slice(0, 800)}`);
+    }
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 async function requestText(model: string, prompt: string): Promise<string> {
@@ -242,6 +251,17 @@ async function requestText(model: string, prompt: string): Promise<string> {
     });
     return stripCodeFences(extractText(payload));
   }
+}
+
+async function requestTextWithMock(options: {
+  model: string;
+  prompt: string;
+  mockResponseFile?: string;
+}): Promise<string> {
+  if (options.mockResponseFile) {
+    return stripCodeFences(await fs.readFile(path.resolve(options.mockResponseFile), 'utf8'));
+  }
+  return requestText(options.model, options.prompt);
 }
 
 async function readAllStdin(): Promise<string> {
@@ -379,6 +399,8 @@ function extractImportantSections(statement: string): string {
     extractSectionBlock(statement, ['输入格式', 'input format', 'input']),
     extractSectionBlock(statement, ['输出格式', 'output format', 'output']),
     extractSectionBlock(statement, ['数据范围', 'constraints', 'limits']),
+    extractSectionBlock(statement, ['样例', 'sample', 'samples']),
+    extractSectionBlock(statement, ['说明', 'note', 'notes', 'guarantee', 'guarantees']),
   ].filter(Boolean);
 
   return parts.join('\n\n').trim();
@@ -390,6 +412,7 @@ function buildInitialPrompt(context: PromptContext): string {
     'Task: given the Genesis contract and the problem statement, generate a correct reference solution if needed and a correct maker.ts.',
     'The user only wants final working outputs.',
     'Think silently. Do not output analysis.',
+    'The Genesis contract below is a TypeScript declaration file. Treat it as the only API truth.',
     'Output exactly these sections, each marker on its own line:',
   ];
 
@@ -400,19 +423,25 @@ function buildInitialPrompt(context: PromptContext): string {
   lines.push('No other sections.');
   lines.push('maker.ts requirements:');
   lines.push('- 5 to 10 test cases');
-  lines.push('- each case must have a distinct job');
+  lines.push('- each case must have a distinct purpose');
   lines.push('- prefer minimal total size while covering many bug types');
   lines.push('- at most 2 extreme cases');
   lines.push('- random cases must be built on clear structural skeletons, never pure random');
   lines.push('- if limits are missing, infer conservative limits and encode them in validate');
+  lines.push("- import only `defineDataset` and `fmt` from 'genesis-kit'");
+  lines.push('- always define validate to encode the invariants you rely on');
+  lines.push('- seed must be a descriptive lowercase kebab-case string, never a generic value like fixed-seed');
+  lines.push('- avoid decorative dead code such as ternaries with identical branches');
   lines.push(`- maker.ts must use solution: '${context.solutionFile}' exactly`);
   lines.push('- use only APIs present in the Genesis contract');
   lines.push('- do not use nonexistent methods, guessed fields, or legacy syntax');
+  lines.push('- if a helper is not listed in the contract, implement it in plain TypeScript instead of guessing a Genesis API');
 
   if (context.needSolution) {
     lines.push(`${languageHint[context.lang]} Save it as ${context.solutionFile}.`);
   } else {
     lines.push(`A reference solution is already provided as ${context.solutionFile}. maker.ts must match it exactly.`);
+    lines.push('If the statement feels ambiguous, prefer the provided reference solution semantics over your own reinterpretation.');
   }
 
   if (highlights) {
@@ -420,9 +449,9 @@ function buildInitialPrompt(context: PromptContext): string {
     lines.push(highlights);
   }
 
-  lines.push('Genesis contract begins:');
+  lines.push('Genesis contract declaration file begins:');
   lines.push(context.contract);
-  lines.push('Genesis contract ends.');
+  lines.push('Genesis contract declaration file ends.');
 
   if (context.solutionSource) {
     lines.push(`Reference solution source (${context.solutionFile}) begins:`);
@@ -440,11 +469,12 @@ function buildInitialPrompt(context: PromptContext): string {
 function buildRepairPrompt(
   context: PromptContext,
   previous: Draft,
-  errorMessage: string,
+  issues: readonly MakerIssue[],
 ): string {
   const highlights = extractImportantSections(context.statement);
   const lines = [
     'The previous answer failed local validation or generation. Fix it.',
+    'The Genesis contract below is a TypeScript declaration file. Treat it as the only API truth.',
     'Output exactly the same required sections, each marker on its own line.',
   ];
 
@@ -454,19 +484,27 @@ function buildRepairPrompt(
   lines.push('<<<MAKER_TS>>>');
   lines.push('No other sections.');
   lines.push(`Reference solution file must stay '${context.solutionFile}'.`);
-  lines.push(`Local error: ${errorMessage}`);
+  lines.push('Local issues:');
+  for (const issue of issues) {
+    lines.push(`- [${issue.code}] ${issue.message}`);
+  }
   lines.push('Do not use g.pick(). Use g.sample().');
   lines.push('Do not use case.output.');
   lines.push('Do not use fmt`...`.');
+  lines.push("- Import only `defineDataset` and `fmt` from 'genesis-kit'.");
+  lines.push('Keep validate() present and aligned with the generated structure.');
+  lines.push('Use a descriptive kebab-case string seed, not a generic seed.');
+  lines.push('Remove dead code and identical-branch ternaries.');
+  lines.push('If a helper is missing from the contract, write plain TypeScript instead of inventing a Genesis method.');
 
   if (highlights) {
     lines.push('Critical I/O and limits excerpt:');
     lines.push(highlights);
   }
 
-  lines.push('Genesis contract begins:');
+  lines.push('Genesis contract declaration file begins:');
   lines.push(context.contract);
-  lines.push('Genesis contract ends.');
+  lines.push('Genesis contract declaration file ends.');
 
   if (context.solutionSource) {
     lines.push(`Reference solution source (${context.solutionFile}) begins:`);
@@ -494,36 +532,232 @@ async function ensureDir(dir: string): Promise<void> {
   await fs.mkdir(dir, { recursive: true });
 }
 
-function lintMakerTs(code: string, solutionFile: string): string[] {
-  const errors: string[] = [];
+async function materializeLocalGenesisPackage(jobDir: string): Promise<void> {
+  const packageDir = path.join(jobDir, 'node_modules', 'genesis-kit');
+  const sourceIndex = path.resolve(__dirname, '..', 'src', 'index.ts');
+  const relativeSourceIndex = path.relative(packageDir, sourceIndex).split(path.sep).join('/');
+  const packageJson = {
+    name: 'genesis-kit',
+    private: true,
+    type: 'module',
+    exports: {
+      '.': './index.ts',
+    },
+  };
+
+  await ensureDir(packageDir);
+  await fs.writeFile(path.join(packageDir, 'package.json'), `${JSON.stringify(packageJson, null, 2)}\n`, 'utf8');
+  await fs.writeFile(
+    path.join(packageDir, 'index.ts'),
+    `export * from ${JSON.stringify(relativeSourceIndex.startsWith('.') ? relativeSourceIndex : `./${relativeSourceIndex}`)};\n`,
+    'utf8',
+  );
+}
+
+async function materializeRuntimeMaker(jobDir: string, makerTs: string): Promise<string> {
+  const runtimeImportUrl = pathToFileURL(path.resolve(__dirname, '..', 'src', 'index.ts')).href;
+  const runtimeMakerTs = makerTs.replace(
+    /from\s*(['"])genesis-kit\1/g,
+    `from ${JSON.stringify(runtimeImportUrl)}`,
+  );
+  const runtimePath = path.join(jobDir, '.maker.runtime.ts');
+  await fs.writeFile(runtimePath, `${runtimeMakerTs.trim()}\n`, 'utf8');
+  return runtimePath;
+}
+
+function lintMakerTs(
+  code: string,
+  solutionFile: string,
+  selection: AiContractSelection,
+): MakerIssue[] {
+  const issues: MakerIssue[] = [];
+  const allowance = resolveAiContractAllowance(selection);
+  const allowedFmtMethods = new Set(allowance.fmtMethods);
+  const allowedGeneratorMethods = new Set(allowance.generatorMethods);
+  const allowedBaseMethods = new Set(allowance.baseMethods);
+  const allowedCharsetProperties = new Set(allowance.charsetProperties);
+  const allowedGeneratorPropertyRoots = new Set(allowance.generatorPropertyRoots);
+
+  if (!/import\s*{\s*[^}]*\bdefineDataset\b[^}]*\bfmt\b[^}]*}\s*from\s*['"]genesis-kit['"]/.test(code)) {
+    issues.push(issue('import-rule', "maker.ts must import defineDataset and fmt from 'genesis-kit'"));
+  }
+  if (/^\s*import\s.+from\s+['"](?!genesis-kit['"]).+['"]\s*;?\s*$/m.test(code)) {
+    issues.push(issue('import-rule', "maker.ts must not import modules other than 'genesis-kit'"));
+  }
 
   if (!/export\s+default\s+defineDataset\s*</.test(code) && !/export\s+default\s+defineDataset\s*\(/.test(code)) {
-    errors.push('maker.ts must export default defineDataset(...)');
+    issues.push(issue('dataset-shape', 'maker.ts must export default defineDataset(...)'));
   }
   if (!/solution\s*:\s*['"`][^'"`]+['"`]/.test(code)) {
-    errors.push('maker.ts must define solution');
+    issues.push(issue('solution', 'maker.ts must define solution'));
   } else if (!new RegExp(`solution\\s*:\\s*['"\`]${escapeRegExp(solutionFile)}['"\`]`).test(code)) {
-    errors.push(`maker.ts solution must be '${solutionFile}'`);
+    issues.push(issue('solution', `maker.ts solution must be '${solutionFile}'`));
   }
-  if (!/seed\s*:/.test(code)) errors.push('maker.ts must define seed');
-  if (!/format\s*:/.test(code)) errors.push('maker.ts must define format');
-  if (!/cases\s*:/.test(code)) errors.push('maker.ts must define cases');
-  if (/output\s*:/.test(code)) errors.push('cases must not define output');
-  if (/fmt`/.test(code)) errors.push('legacy fmt template syntax is not allowed');
-  if (/g\.pick\(/.test(code)) errors.push('g.pick is not available; use g.sample');
+  if (!/seed\s*:/.test(code)) {
+    issues.push(issue('seed', 'maker.ts must define seed'));
+  } else {
+    issues.push(...lintSeedLiteral(code));
+  }
+  if (!/format\s*:/.test(code)) issues.push(issue('format', 'maker.ts must define format'));
+  if (!/validate\s*:/.test(code)) issues.push(issue('validate', 'maker.ts must define validate for semantic guardrails'));
+  if (!/cases\s*:/.test(code)) issues.push(issue('cases', 'maker.ts must define cases'));
+  if (/output\s*:/.test(code)) issues.push(issue('case-output', 'cases must not define output'));
+  if (/fmt`/.test(code)) issues.push(issue('legacy-fmt', 'legacy fmt template syntax is not allowed'));
+  if (/g\.pick\(/.test(code)) issues.push(issue('legacy-generator', 'g.pick is not available; use g.sample'));
+  if (/\bG\./.test(code)) issues.push(issue('legacy-generator', 'maker.ts must not use G. Use the per-case generate() context g instead'));
+  if (/\b(?:Maker|Checker)\b/.test(code)) issues.push(issue('legacy-api', 'maker.ts must not use legacy Maker or Checker APIs'));
 
-  return errors;
+  issues.push(...scanUnsupportedMethodCalls(code, 'fmt', allowedFmtMethods, 'fmt', 'unsupported-fmt-method'));
+  issues.push(...scanUnsupportedMethodCalls(code, 'g', allowedGeneratorMethods, 'g', 'unsupported-generator-method'));
+  issues.push(...scanUnsupportedMethodCalls(code, 'g.base', allowedBaseMethods, 'g.base', 'unsupported-base-method'));
+  issues.push(...scanUnsupportedPropertyRoots(code, allowedGeneratorPropertyRoots));
+  issues.push(...scanUnsupportedCharsetProperties(code, allowedCharsetProperties));
+  issues.push(...scanRedundantTernaries(code));
+
+  return issues;
 }
 
 function escapeRegExp(text: string): string {
   return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
+function issue(code: string, message: string): MakerIssue {
+  return { code, message };
+}
+
+function formatIssues(issues: readonly MakerIssue[]): string {
+  return issues.map(({ code, message }) => `[${code}] ${message}`).join(' | ');
+}
+
+function normalizeIssues(error: unknown, fallbackCode: string): MakerIssue[] {
+  if (error instanceof AiWorkflowError) {
+    return error.issues;
+  }
+
+  const message = error instanceof Error ? error.message : String(error);
+  return [issue(fallbackCode, message)];
+}
+
+function lintSeedLiteral(code: string): MakerIssue[] {
+  const match = code.match(/seed\s*:\s*['"`]([^'"`]+)['"`]/);
+  if (!match) {
+    return [issue('seed', 'maker.ts seed must be a descriptive string literal')];
+  }
+
+  const seed = match[1].trim();
+  const normalized = seed.toLowerCase();
+  const genericSeeds = new Set([
+    'seed',
+    'fixed-seed',
+    'random-seed',
+    'default-seed',
+    'dataset-seed',
+    'example-seed',
+    'test-seed',
+    'fixed',
+    'random',
+    'default',
+  ]);
+
+  if (!/^[a-z0-9]+(?:-[a-z0-9]+){1,}$/.test(seed)) {
+    return [issue('seed', 'maker.ts seed must use lowercase kebab-case like problem-slug-dataset-v1')];
+  }
+  if (genericSeeds.has(normalized)) {
+    return [issue('seed', 'maker.ts seed must be descriptive, not a generic value like fixed-seed')];
+  }
+  return [];
+}
+
+function scanUnsupportedMethodCalls(
+  code: string,
+  objectPath: string,
+  allowed: Set<string>,
+  label: string,
+  codeName: string,
+): MakerIssue[] {
+  const methods = new Set<string>();
+  const regex = new RegExp(`\\b${escapeRegExp(objectPath)}\\.([A-Za-z_$][\\w$]*)\\s*\\(`, 'g');
+
+  for (const match of code.matchAll(regex)) {
+    const method = match[1];
+    if (!method || allowed.has(method)) continue;
+    methods.add(method);
+  }
+
+  return [...methods].map(method => issue(codeName, `${label}.${method} is not available in the Genesis contract for this problem`));
+}
+
+function scanUnsupportedPropertyRoots(
+  code: string,
+  allowedRoots: Set<string>,
+): MakerIssue[] {
+  const roots = new Set<string>();
+  const regex = /\bg\.([A-Za-z_$][\w$]*)\./g;
+
+  for (const match of code.matchAll(regex)) {
+    const root = match[1];
+    if (!root || allowedRoots.has(root)) continue;
+    roots.add(root);
+  }
+
+  return [...roots].map(root => issue('unsupported-generator-root', `g.${root} is not available in the Genesis contract for this problem`));
+}
+
+function scanUnsupportedCharsetProperties(
+  code: string,
+  allowedProperties: Set<string>,
+): MakerIssue[] {
+  const properties = new Set<string>();
+  const regex = /\bg\.CHARSET\.([A-Za-z_$][\w$]*)\b/g;
+
+  for (const match of code.matchAll(regex)) {
+    const property = match[1];
+    if (!property || allowedProperties.has(property)) continue;
+    properties.add(property);
+  }
+
+  return [...properties].map(property => issue('unsupported-charset', `g.CHARSET.${property} is not available in the Genesis contract for this problem`));
+}
+
+function scanRedundantTernaries(code: string): MakerIssue[] {
+  const messages = new Set<string>();
+
+  for (const line of code.split(/\r?\n/)) {
+    if (!line.includes('?') || !line.includes(':')) continue;
+    const ternary = line.match(/\?(.+):(.+)/);
+    if (!ternary) continue;
+
+    const whenTrue = normalizeExpressionFragment(ternary[1]);
+    const whenFalse = normalizeExpressionFragment(ternary[2]);
+
+    if (whenTrue && whenTrue === whenFalse) {
+      messages.add('maker.ts must not contain ternaries with identical branches');
+    }
+  }
+
+  return [...messages].map(message => issue('dead-code', message));
+}
+
+function normalizeExpressionFragment(fragment: string): string {
+  return fragment
+    .replace(/\/\/.*$/, '')
+    .replace(/[),;\]}]+$/g, '')
+    .replace(/,+$/g, '')
+    .replace(/^\(+|\)+$/g, '')
+    .replace(/\s+/g, '')
+    .trim();
+}
+
 function formatFailures(result: DatasetRunResult): string {
   const failed = result.results
     .filter(item => item.status === 'failure')
     .slice(0, 5)
-    .map(item => `${item.name}: ${item.error?.message ?? 'failed'}`);
+    .map(item => {
+      const phase = item.error?.phase ?? 'unknown';
+      const kind = item.error?.kind ?? 'unknown';
+      const suffix = item.repeatIndex > 0 ? ` repeat=${item.repeatIndex}` : '';
+      return `#${item.caseNumber} ${item.name}${suffix} phase=${phase} kind=${kind}: ${item.error?.message ?? 'failed'}`;
+    });
 
   if (failed.length === 0) {
     return `dataset generation failed: ${result.summary.failed} case(s) failed`;
@@ -534,6 +768,7 @@ function formatFailures(result: DatasetRunResult): string {
 
 async function materializeAndRun(params: {
   jobDir: string;
+  selection: AiContractSelection;
   contract: string;
   statement: string;
   solutionFile: string;
@@ -541,15 +776,19 @@ async function materializeAndRun(params: {
   providedSolutionSource?: string;
   draft: Draft;
 }): Promise<DatasetRunResult> {
-  const lintErrors = lintMakerTs(params.draft.makerTs, params.solutionFile);
-  if (lintErrors.length > 0) {
-    throw new Error(lintErrors.join(' | '));
+  const lintIssues = lintMakerTs(params.draft.makerTs, params.solutionFile, params.selection);
+  if (lintIssues.length > 0) {
+    throw new AiWorkflowError(lintIssues);
   }
 
+  const makerPath = path.join(params.jobDir, 'maker.ts');
   await ensureDir(params.jobDir);
   await fs.writeFile(path.join(params.jobDir, 'problem.md'), `${params.statement.trim()}\n`, 'utf8');
-  await fs.writeFile(path.join(params.jobDir, 'genesis-contract.md'), `${params.contract.trim()}\n`, 'utf8');
-  await fs.writeFile(path.join(params.jobDir, 'maker.ts'), `${params.draft.makerTs.trim()}\n`, 'utf8');
+  await fs.writeFile(path.join(params.jobDir, 'genesis-contract.d.ts'), `${params.contract.trim()}\n`, 'utf8');
+  await fs.writeFile(path.join(params.jobDir, 'contract-selection.json'), `${JSON.stringify(params.selection, null, 2)}\n`, 'utf8');
+  await fs.writeFile(makerPath, `${params.draft.makerTs.trim()}\n`, 'utf8');
+  await materializeLocalGenesisPackage(params.jobDir);
+  const runtimeMakerPath = await materializeRuntimeMaker(params.jobDir, params.draft.makerTs);
 
   const solutionTarget = path.join(params.jobDir, params.solutionFile);
   if (params.providedSolutionPath) {
@@ -562,9 +801,19 @@ async function materializeAndRun(params: {
     await fs.writeFile(path.join(params.jobDir, 'solution.source.txt'), `${params.providedSolutionSource.trim()}\n`, 'utf8');
   }
 
-  const result = await generateDatasetFromFile(path.join(params.jobDir, 'maker.ts'));
+  const runtimeDataset = await loadDatasetFromFile(runtimeMakerPath);
+  const validation = await validateDataset(runtimeDataset, { datasetFile: makerPath });
+  if (validation.summary.failed > 0) {
+    throw new AiWorkflowError([
+      issue('dataset-validation', `dataset validation failed: ${formatFailures(validation)}`),
+    ]);
+  }
+
+  const result = await generateDataset(runtimeDataset, { datasetFile: makerPath });
   if (result.summary.failed > 0) {
-    throw new Error(formatFailures(result));
+    throw new AiWorkflowError([
+      issue('dataset-generation', `dataset generation failed: ${formatFailures(result)}`),
+    ]);
   }
   return result;
 }
@@ -572,7 +821,7 @@ async function materializeAndRun(params: {
 async function main(): Promise<void> {
   const options = parseArgs(process.argv.slice(2));
 
-  if (!apiKey) {
+  if (!apiKey && !options.mockResponseFile) {
     throw new Error('Set OPENAI_API_KEY or ASXS_API_KEY before running examples/ai-maker.ts');
   }
 
@@ -581,7 +830,8 @@ async function main(): Promise<void> {
     throw new Error('Problem statement is empty.');
   }
 
-  const contract = (await fs.readFile(contractPath, 'utf8')).trim();
+  const selection = selectAiContract(statement);
+  const contract = renderAiGenesisContractDts(selection).trim();
   const jobName = normalizeJobName(options.name);
   const jobDir = path.join(path.resolve(options.jobRoot), jobName);
   const needSolution = !options.solutionPath;
@@ -596,6 +846,9 @@ async function main(): Promise<void> {
   console.log(`jobDir=${jobDir}`);
   console.log(`model=${options.model}`);
   console.log(`solution=${solutionFile}${needSolution ? ' (AI)' : ' (provided)'}`);
+  if (options.mockResponseFile) {
+    console.log(`mockResponse=${path.resolve(options.mockResponseFile)}`);
+  }
 
   const promptContext: PromptContext = {
     contract,
@@ -607,24 +860,28 @@ async function main(): Promise<void> {
   };
 
   let previous: Draft | undefined;
-  let lastError = '';
+  let lastIssues: MakerIssue[] = [];
   let finalResult: DatasetRunResult | null = null;
 
   for (let attempt = 0; attempt <= options.repair; attempt++) {
     const prompt = attempt === 0
       ? buildInitialPrompt(promptContext)
-      : buildRepairPrompt(promptContext, previous!, lastError);
+      : buildRepairPrompt(promptContext, previous!, lastIssues);
 
     console.log(`ai attempt ${attempt + 1}/${options.repair + 1}`);
-    const raw = await requestText(options.model, prompt);
+    const raw = await requestTextWithMock({
+      model: options.model,
+      prompt,
+      mockResponseFile: options.mockResponseFile,
+    });
     await fs.writeFile(path.join(jobDir, `response.attempt-${attempt + 1}.txt`), `${raw.trim()}\n`, 'utf8');
 
     let draft: Draft;
     try {
       draft = parseDraft(raw, needSolution);
     } catch (error) {
-      lastError = error instanceof Error ? error.message : String(error);
-      console.log(`attempt failed: ${lastError}`);
+      lastIssues = normalizeIssues(error, 'parse-sections');
+      console.log(`attempt failed: ${formatIssues(lastIssues)}`);
       continue;
     }
 
@@ -633,6 +890,7 @@ async function main(): Promise<void> {
     try {
       finalResult = await materializeAndRun({
         jobDir,
+        selection,
         contract,
         statement,
         solutionFile,
@@ -642,13 +900,13 @@ async function main(): Promise<void> {
       });
       break;
     } catch (error) {
-      lastError = error instanceof Error ? error.message : String(error);
-      console.log(`attempt failed: ${lastError}`);
+      lastIssues = normalizeIssues(error, 'local-run');
+      console.log(`attempt failed: ${formatIssues(lastIssues)}`);
     }
   }
 
   if (!finalResult || finalResult.summary.failed > 0) {
-    throw new Error(`AI workflow failed after ${options.repair + 1} attempt(s): ${lastError}`);
+    throw new Error(`AI workflow failed after ${options.repair + 1} attempt(s): ${formatIssues(lastIssues)}`);
   }
 
   console.log(`ok: ${path.join(jobDir, 'maker.ts')}`);
