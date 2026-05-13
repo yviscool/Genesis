@@ -4,10 +4,10 @@ import path from 'node:path';
 import { consola } from 'consola';
 import { execa } from 'execa';
 import ora from 'ora';
-import { green } from 'picocolors';
+import pc from 'picocolors';
 import { detectLanguage, type LanguageInfo } from './language';
 import { t } from './i18n';
-import { type GenesisConfig, type OjProfile } from './types';
+import { type OjProfile } from './types';
 
 export const GENESIS_CACHE_DIR = '.genesis';
 const CACHE_FILE = path.join(GENESIS_CACHE_DIR, 'cache.json');
@@ -25,7 +25,12 @@ interface CacheMetadata {
   };
 }
 
-export interface ExecutionConfig extends Pick<GenesisConfig, 'compiler' | 'compilerFlags' | 'ojProfile' | 'stackSizeBytes'> {}
+export interface ExecutionConfig {
+  compiler?: string;
+  compilerFlags?: string[];
+  ojProfile?: OjProfile;
+  stackSizeBytes?: number;
+}
 
 export interface ResolvedCompiler {
   command: string;
@@ -104,7 +109,7 @@ async function handleCompiledLanguage(
 
   const compilerVersion = await getCompilerVersion(compiler);
   if (compilerVersion) {
-    consola.info(t('compilation.usingCompiler', `${compiler.displayName} ${green(compilerVersion)}`));
+    consola.info(t('compilation.usingCompiler', `${compiler.displayName} ${pc.green(compilerVersion)}`));
   } else {
     consola.info(t('compilation.usingCompiler', compiler.displayName));
   }
@@ -561,10 +566,10 @@ function getCompilerHelpMessage(lang: LanguageInfo): string {
   message += `${t('compiler.installHint')}\n\n`;
 
   if (command.startsWith('http')) {
-    message += `${t('compiler.installGuideLink', green(command))}\n`;
+    message += `${t('compiler.installGuideLink', pc.green(command))}\n`;
   } else {
     message += `${t('compiler.copyCommand')}\n\n`;
-    message += `   ${green(command)}\n`;
+    message += `   ${pc.green(command)}\n`;
   }
 
   return message;

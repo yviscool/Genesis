@@ -1,128 +1,81 @@
-// examples/make.ts
-import { Maker, G } from '../src/index';
+import { defineDataset, fmt } from 'genesis-kit';
 
+type Input = {
+  n: number;
+  k: number;
+  a: number[];
+};
 
-await Maker
-  .configure({
-    solution: 'std.cpp',
-    // 我们把起始编号设为 101，来测试这个配置是否生效
-    // startFrom: 101, 
-  })
+const MAX_A = 1_000_000_000;
 
-  .case('Map Problem', () => {
-    const n = 5, m = 5;
-    const grid = G.matrix(n, m, () => G.int(0, 1)); // grid 是一个数字矩阵，如 [[0,1],[1,0]]
+export default defineDataset<Input>({
+  solution: 'std.cpp',
+  outputDir: 'data',
+  seed: 'genesis-v2-example-threshold-doubling',
+  runTimeoutMs: 5000,
 
-    // 这是错误的！因为 grid 不是字符串数组，会被格式化为多行 "0 1"
-    return [[n, m], grid];
+  format: ({ n, k, a }) => fmt.lines(
+    [n, k],
+    a,
+  ),
 
-    // 正确的做法: 先将 grid 的每一行转换为字符串
-    const stringGrid = grid.map(row => row.join(' '));
-    // stringGrid 是一个字符串数组, 如 ["0 1", "1 0"]
+  validate: ({ n, k, a }) => {
+    if (!Number.isInteger(n) || n < 1 || n > 1000) return 'n must be in [1, 1000]';
+    if (!Number.isInteger(k) || k < 1 || k > MAX_A) return 'k must be in [1, 1e9]';
+    if (a.length !== n) return 'a.length must equal n';
+    return a.every(value => Number.isInteger(value) && value >= 1 && value <= MAX_A)
+      || 'each a[i] must be in [1, 1e9]';
+  },
 
-    return [
-      [n, m],     // -> "5 5"
-      stringGrid  // -> "0 1\n1 0"
-    ];
-  })
-  /**
-   * Case 2: 小数据 - 完全没有杂物
-   * 目的: 最简单的情况，答案应该是 n * m。
-   */
-  .case('Small - No Debris', () => {
-    const n = 10, m = 10;
-    const grid = G.matrix(n, m, () => '.').map(row => row.join(''));
-    return [
-      [n, m],
-      grid
-    ];
-  })
-
-  /**
-   * Case 3: 小数据 - 全是杂物
-   * 目的: 测试移除一个杂物后的情况。答案应该是 1 (如果 n,m > 2)。
-   */
-  .case('Small - All Debris', () => {
-    const n = 8, m = 8;
-    const grid = G.matrix(n, m, () => '#').map(row => row.join(''));
-    return [
-      `${n} ${m}`,
-      ...grid
-    ];
-  })
-
-  /**
-   * Case 4: 边界 - 只有一行
-   * 目的: 测试 n=1 的情况，此时不存在上下相邻。
-   */
-  .case('Edge - Single Row', () => {
-    const n = 1, m = 100;
-    const grid = [G.string(m, '.#')]; // 随机生成一行
-    return [
-      `${n} ${m}`,
-      ...grid
-    ];
-  })
-
-  /**
-   * Case 5: 边界 - 只有一列
-   * 目的: 测试 m=1 的情况，此时不存在左右相邻。
-   */
-  .case('Edge - Single Column', () => {
-    const n = 100, m = 1;
-    // G.array() 生成一维数组，每个元素是一个字符
-    const grid = G.array(n, () => G.sample(['.', '#'], 1)[0]);
-    return [
-      `${n} ${m}`,
-      ...grid
-    ];
-  })
-
-  /**
-   * Case 6: 随机中等数据
-   * 目的: 检查常规情况下的正确性。
-   */
-  .case('Random - Medium', () => {
-    const n = 50, m = 50;
-    // 使用 G.matrix 快速生成二维网格，30% 的概率为杂物
-    const grid = G.matrix(n, m, () => Math.random() < 0.3 ? '#' : '.').map(row => row.join(''));
-    return [
-      `${n} ${m}`,
-      ...grid
-    ];
-  })
-
-  /**
-   * Case 7: 特殊构造 - 移除中心杂物收益最大
-   * 目的: 构造一个场景，只有移除特定的一个杂物才能获得最优解。
-   */
-  .case('Constructed - Max Gain', () => {
-    const n = 100, m = 100;
-    const grid = G.matrix(n, m, (r, c) => {
-      // 在中心 3x3 区域放置杂物，其余都是荒地
-      if (r >= 48 && r <= 50 && c >= 48 && c <= 50) {
-        return '#';
-      }
-      return '.';
-    }).map(row => row.join(''));
-    return [
-      `${n} ${m}`,
-      ...grid
-    ];
-  })
-
-  /**
-   * Case 8: 特殊构造 - 棋盘格
-   * 目的: 测试杂物和荒地交错分布的复杂情况。
-   */
-  .case('Constructed - Checkerboard', () => {
-    const n = 100, m = 100;
-    const grid = G.matrix(n, m, (r, c) => (r + c) % 2 === 0 ? '#' : '.').map(row => row.join(''));
-    return [
-      `${n} ${m}`,
-      ...grid
-    ];
-  })
-
-  // 启动生成流程
-  .generate();
+  cases: [
+    {
+      name: 'min-boundary',
+      input: { n: 1, k: 1, a: [1] },
+    },
+    {
+      name: 'sample-style',
+      input: { n: 4, k: 20, a: [3, 5, 20, 21] },
+    },
+    {
+      name: 'all-greater-than-k',
+      input: {
+        n: 8,
+        k: 100,
+        a: [101, 150, 200, 999, 1000, 123456, 999999999, MAX_A],
+      },
+    },
+    {
+      name: 'mixed-near-threshold',
+      input: {
+        n: 12,
+        k: 1000,
+        a: [1, 2, 3, 7, 8, 15, 16, 31, 32, 500, 999, 1000],
+      },
+    },
+    {
+      name: 'random-small',
+      repeat: 8,
+      generate: ({ g }) => {
+        const n = g.int(1, 30);
+        const k = g.int(1, 10_000);
+        return {
+          n,
+          k,
+          a: g.array(n, () => g.int(1, 10_000)),
+        };
+      },
+    },
+    {
+      name: 'max-random',
+      repeat: 4,
+      generate: ({ g }) => {
+        const n = 1000;
+        return {
+          n,
+          k: MAX_A,
+          a: g.array(n, () => g.int(1, MAX_A)),
+        };
+      },
+    },
+  ],
+});

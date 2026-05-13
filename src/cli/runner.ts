@@ -1,50 +1,63 @@
-import fs from 'node:fs/promises';
-import path from 'node:path';
 import { consola } from 'consola';
-import { execa } from 'execa';
-import { t } from '../i18n';
+import {
+  generateDatasetFromFile,
+  replayDatasetFromFile,
+  validateDatasetFromFile,
+  type DatasetRunResult,
+} from '../dataset-runner';
 
-export async function runScript(scriptName: 'make.ts' | 'check.ts') {
-  const scriptPath = path.join(process.cwd(), scriptName);
+export async function runDatasetCommand(
+  mode: 'make' | 'validate' | 'replay',
+  options: { file?: string; case?: string | number; name?: string; repeat?: string | number; outputDir?: string } = {},
+): Promise<void> {
+  const entryFile = options.file ?? 'make.ts';
 
   try {
-    await fs.access(scriptPath);
-  } catch {
-    consola.error(t('cli.runner.notFound', scriptName));
-    consola.info(t('cli.runner.hint'));
+    const result = mode === 'make'
+      ? await generateDatasetFromFile(entryFile)
+      : mode === 'validate'
+        ? await validateDatasetFromFile(entryFile)
+        : await replayDatasetFromFile(entryFile, {
+          caseNumber: parseIntegerOption(options.case, '--case'),
+          caseName: options.name,
+          repeatIndex: parseIntegerOption(options.repeat, '--repeat'),
+          outputDir: options.outputDir,
+        });
+
+    reportResult(mode, result);
+    if (result.summary.failed > 0) {
+      process.exit(1);
+    }
+  } catch (error) {
+    consola.error(error instanceof Error ? error.message : String(error));
     process.exit(1);
   }
+}
 
-  // Preferred order:
-  // 1) bun (fast path)
-  // 2) tsx (works on older Node versions)
-  // 3) node (modern Node can run .ts directly in many setups)
-  const runners: [string, string[]][] = [
-    ['bun', [scriptPath]],
-    ['tsx', [scriptPath]],
-    ['node', [scriptPath]],
-  ];
+function parseIntegerOption(value: string | number | undefined, name: string): number | undefined {
+  if (value === undefined) return undefined;
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed < 0) {
+    throw new Error(`${name} must be a non-negative integer.`);
+  }
+  return parsed;
+}
 
-  for (let i = 0; i < runners.length; i++) {
-    const [command, args] = runners[i];
-    try {
-      // Try current runner.
-      await execa(command, args, { stdio: 'inherit' });
-      // Stop at first successful runner.
-      return;
-    } catch (error: any) {
-      // If runner is not installed, try next candidate.
-      if (error.code === 'ENOENT') {
-        consola.debug(`Runner '${command}' not found, trying next...`);
-        continue;
-      }
+function reportResult(mode: 'make' | 'validate' | 'replay', result: DatasetRunResult): void {
+  const { totalCases, succeeded, failed, durationMs } = result.summary;
+  const label = mode === 'make' ? 'generation' : mode === 'validate' ? 'validation' : 'replay';
 
-      // Runner exists but script execution failed.
-      process.exit(1);
+  if (failed === 0) {
+    consola.success(`Dataset ${label} complete: ${succeeded}/${totalCases} cases passed (${durationMs}ms).`);
+  } else {
+    consola.warn(`Dataset ${label} finished with failures: ${succeeded}/${totalCases} cases passed, ${failed} failed.`);
+    for (const record of result.results.filter(item => item.status === 'failure')) {
+      consola.error(`${record.name} #${record.caseNumber}: ${record.error?.message ?? 'failed'}`);
     }
   }
 
-  // No supported runtime found.
-  consola.error('Could not find a suitable TypeScript runtime (bun, tsx, or node). Please install one.');
-  process.exit(1);
+  if (result.manifest) {
+    consola.info(`Manifest: ${result.manifest.dataset.manifestPath}`);
+    console.log(`GENESIS_MANIFEST=${result.manifest.dataset.manifestPath}`);
+  }
 }

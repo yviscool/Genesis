@@ -139,3 +139,8 @@ vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 .genesis
 data/
+examples/*.exe
+examples/*.manifest.json
+examples/.ai-jobs/
+examples/ai-data/
+.tmp-*

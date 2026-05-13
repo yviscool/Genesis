@@ -1,7 +1,7 @@
 {
   "name": "genesis-kit",
-  "version": "1.3.0",
-  "description": "Simple and easy-to-use test data generator and comparator designed for algorithm competitions (OI/ACM).",
+  "version": "2.0.0",
+  "description": "AI-first deterministic dataset generator for algorithm competitions.",
   "keywords": [
     "oi",
     "acm",
@@ -10,8 +10,9 @@
     "contest",
     "test-data",
     "generator",
-    "checker",
-    "对拍",
+    "dataset",
+    "deterministic",
+    "ai-first",
     "genesis-kit"
   ],
   "author": "YV",
@@ -26,6 +27,15 @@
   "bin": {
     "genesis": "dist/cli.js"
   },
+  "files": [
+    "dist",
+    "manifest.schema.json",
+    "CHANGELOG.md",
+    "MIGRATION.md",
+    "README.md",
+    "README.en.md",
+    "LICENSE"
+  ],
   "module": "./dist/index.mjs",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -36,13 +46,15 @@
       "require": "./dist/index.js",
       "bun": "./dist/bun/index.js",
       "types": "./dist/index.d.ts"
-    }
+    },
+    "./manifest.schema.json": "./manifest.schema.json"
   },
   "scripts": {
     "test": "bun test",
     "dev": "bun --watch run examples/make.ts",
     "build": "bun run build.ts",
-    "release": "bun run build && bun run test && bun publish"
+    "release:check": "node scripts/release-check.mjs",
+    "release": "bun run release:check && bun publish"
   },
   "devDependencies": {
     "@types/bun": "latest",

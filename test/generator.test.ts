@@ -1,5 +1,7 @@
-import { describe, test, expect, mock } from 'bun:test';
-import { G } from '../src/generator';
+import { describe, test, expect } from 'bun:test';
+import { createGenerator } from '../src/index';
+
+const G = createGenerator('generator-test-seed');
 
 describe('G (Generator) - 生成器测试', () => {
   describe('G.CHARSET - 字符集', () => {
@@ -837,27 +839,11 @@ describe('G (Generator) - 生成器测试', () => {
     });
   });
 
-  describe('G.withRng - 随机源注入', () => {
-    const createLcg = (seed: number) => {
-      let x = seed >>> 0;
-      return () => {
-        x = (x * 1664525 + 1013904223) >>> 0;
-        return x / 4294967296;
-      };
-    };
-
-    test('注入同一个 RNG 应得到可复现结果', () => {
-      try {
-        G.withRng(createLcg(12345));
-        const first = G.ints(8, 1, 1000);
-
-        G.withRng(createLcg(12345));
-        const second = G.ints(8, 1, 1000);
-
-        expect(first).toEqual(second);
-      } finally {
-        G.resetRng();
-      }
+  describe('createGenerator - deterministic instances', () => {
+    test('same seed should produce replayable results', () => {
+      const first = createGenerator('same-seed').ints(8, 1, 1000);
+      const second = createGenerator('same-seed').ints(8, 1, 1000);
+      expect(first).toEqual(second);
     });
   });
 

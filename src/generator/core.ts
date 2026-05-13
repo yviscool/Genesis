@@ -1,12 +1,14 @@
 // src/generator/core.ts
 // 核心基础函数 — 单例导出，其他模块直接 import
 
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { chunk as esChunk } from 'es-toolkit';
 
 export type RandomSource = () => number;
 
 const MAX_RANDOM = 1 - Number.EPSILON;
 let randomSource: RandomSource = Math.random;
+const scopedRandomSource = new AsyncLocalStorage<RandomSource>();
 
 function normalizedRandom(value: number): number {
     if (!Number.isFinite(value)) return 0;
@@ -33,10 +35,23 @@ export function resetRng(): void {
 }
 
 /**
+ * Run a synchronous or async callback with an isolated random source.
+ * This is used by v2 generator instances so per-case RNG does not mutate the
+ * legacy process-global G random source.
+ */
+export function runWithRng<T>(rng: RandomSource, callback: () => T): T {
+    if (typeof rng !== 'function') {
+        throw new Error('Random source must be a function.');
+    }
+    return scopedRandomSource.run(rng, callback);
+}
+
+/**
  * 获取 [0, 1) 随机小数。
  */
 export function rand(): number {
-    return normalizedRandom(randomSource());
+    const source = scopedRandomSource.getStore() ?? randomSource;
+    return normalizedRandom(source());
 }
 
 /**
@@ -103,4 +118,4 @@ export function chunk<T>(array: readonly T[], size: number): T[][] {
 }
 
 // 为了兼容旧代码，保留 core 对象形式
-export const core = { int, shuffle, shuffleInPlace, sample, rand, withRng, resetRng };
+export const core = { int, shuffle, shuffleInPlace, sample, rand, withRng, resetRng, runWithRng };

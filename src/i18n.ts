@@ -11,6 +11,11 @@ type Locale = 'en' | 'zh';
 let translations: Record<string, string> = {};
 
 function getSystemLocale(): Locale {
+  const explicitLocale = process.env.GENESIS_LANG;
+  if (explicitLocale) {
+    return explicitLocale.toLowerCase().startsWith('zh') ? 'zh' : 'en';
+  }
+
   // 优先使用环境变量，因为它们在不同运行时中更可靠
   const lang = process.env.LANG || process.env.LC_MESSAGES || process.env.LC_ALL;
   if (lang && lang.toLowerCase().startsWith('zh')) {
