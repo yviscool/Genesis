@@ -1,4 +1,4 @@
-import { describe, test, expect } from 'bun:test';
+﻿import { describe, test, expect } from 'bun:test';
 import { createGenerator } from '../src/index';
 
 const G = createGenerator('generator-test-seed');
@@ -268,6 +268,13 @@ describe('G (Generator) - 生成器测试', () => {
 
     test('如果 sum 对于 minVal 来说太小应抛出错误', () => {
       expect(() => G.partition(5, 10, { minVal: 3 })).toThrow('Cannot partition sum 10 into 5 parts with minVal 3. Required sum is at least 15.');
+    });
+
+    test('不承诺返回顺序', () => {
+      const result = G.partition(6, 60);
+      const sorted = [...result].sort((a, b) => a - b);
+      expect(result.reduce((sum, value) => sum + value, 0)).toBe(60);
+      expect(result).not.toEqual(sorted);
     });
   });
 
@@ -836,6 +843,29 @@ describe('G (Generator) - 生成器测试', () => {
 
       const hasRealGap = result.some((curr, i) => i > 0 && curr[0] - result[i - 1][1] > 1);
       expect(hasRealGap).toBe(true);
+    });
+
+    test('non-overlapping intervals do not guarantee sorted output unless requested', () => {
+      const result = G.intervals(5, 1, 40, {
+        overlapping: false,
+        sorted: false,
+        minLen: 2,
+        allowGaps: true,
+      });
+
+      const sorted = [...result].sort((a, b) => a[0] - b[0]);
+      expect(result).not.toEqual(sorted);
+    });
+  });
+
+  describe('G.sample - sampling semantics', () => {
+    test('sample(population, k) should sample without replacement', () => {
+      const population = [1, 2, 3, 4, 5, 6];
+      const result = G.sample(population, 4);
+
+      expect(result).toBeArrayOfSize(4);
+      expect(new Set(result).size).toBe(4);
+      result.forEach(value => expect(population).toContain(value));
     });
   });
 

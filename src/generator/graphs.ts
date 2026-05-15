@@ -332,6 +332,7 @@ export function binaryTree(n: number, options: BinaryTreeOptions = {}): { edges:
 
     const offset = oneBased ? 1 : 0;
     const edges: number[][] = [];
+    let root = offset;
 
     if (type === 'complete') {
         // 完全二叉树：节点 i 的左子节点是 2i+1，右子节点是 2i+2
@@ -364,5 +365,5 @@ export function binaryTree(n: number, options: BinaryTreeOptions = {}): { edges:
         }
     }
 
-    return { edges: core.shuffleInPlace(edges), root: offset };
+    return { edges: core.shuffleInPlace(edges), root };
 }

@@ -13,6 +13,19 @@ describe('Genesis v2 formatter and generator', () => {
     expect(renderFormatDocument(document)).toBe('3 2\n1 2\n3 4\n5 6\n.#.\n#.#\ndone');
   });
 
+  test('renders fmt.lines consistently across atoms, atom arrays, and nested nodes', () => {
+    const document = fmt.lines(
+      7,
+      [1, 2, 3],
+      fmt.line('x', 'y'),
+      fmt.table([[4, 5], [6, 7]]),
+      fmt.grid(['ab', ['c', 'd']]),
+      fmt.raw('tail'),
+    );
+
+    expect(renderFormatDocument(document)).toBe('7\n1 2 3\nx y\n4 5\n6 7\nab\ncd\ntail');
+  });
+
   test('rejects legacy nested arrays as v2 format output', () => {
     expect(() => normalizeFormat([[1, 2], [3, 4]])).toThrow(/fmt/);
   });
