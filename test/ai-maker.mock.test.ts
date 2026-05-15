@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, test } from 'bun:test';
+import { spawn } from 'node:child_process';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { execa } from 'execa';
 
 const fixtureNames = [
   'arithmetic-matrix',
@@ -11,6 +11,60 @@ const fixtureNames = [
   'multiple-of-all',
   'tree-max-degree',
 ] as const;
+
+type SubprocessResult = {
+  stdout: string;
+  stderr: string;
+  exitCode: number;
+};
+
+async function runLocalAiMaker(args: string[]): Promise<SubprocessResult> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, args, {
+      cwd: process.cwd(),
+      env: process.env,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+
+    let stdout = '';
+    let stderr = '';
+
+    child.stdout.setEncoding('utf8');
+    child.stderr.setEncoding('utf8');
+    child.stdout.on('data', chunk => {
+      stdout += chunk;
+    });
+    child.stderr.on('data', chunk => {
+      stderr += chunk;
+    });
+    child.on('error', reject);
+    child.on('close', code => {
+      if (code === 0) {
+        resolve({
+          stdout,
+          stderr,
+          exitCode: 0,
+        });
+        return;
+      }
+
+      const message = [
+        `Command failed with exit code ${code ?? -1}.`,
+        stderr.trim(),
+        stdout.trim(),
+      ].filter(Boolean).join('\n');
+      const error = new Error(message) as Error & {
+        stdout?: string;
+        stderr?: string;
+        exitCode?: number;
+      };
+      error.stdout = stdout;
+      error.stderr = stderr;
+      error.exitCode = code ?? -1;
+      reject(error);
+    });
+  });
+}
 
 describe('ai-maker mock regressions', () => {
   const tempDirs: string[] = [];
@@ -33,7 +87,7 @@ describe('ai-maker mock regressions', () => {
       const statementPath = path.join(fixtureDir, 'problem.md');
       const responsePath = path.join(fixtureDir, 'response.txt');
 
-      const result = await execa(process.execPath, [
+      const result = await runLocalAiMaker([
         'run',
         'examples/ai-maker.ts',
         '--statement',
@@ -44,9 +98,7 @@ describe('ai-maker mock regressions', () => {
         jobRoot,
         '--mock-response-file',
         responsePath,
-      ], {
-        cwd: process.cwd(),
-      });
+      ]);
 
       const manifestPath = path.join(jobRoot, fixtureName, 'data.manifest.json');
       const manifest = JSON.parse(await fs.readFile(manifestPath, 'utf8'));
@@ -60,7 +112,7 @@ describe('ai-maker mock regressions', () => {
     });
   }
 
-  test('rejects generic seeds and identical-branch ternaries in AI output', async () => {
+  test('rejects nonexistent APIs and forbidden case output fields in AI output', async () => {
     const jobRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'genesis-ai-maker-bad-lint-'));
     tempDirs.push(jobRoot);
 
@@ -90,16 +142,23 @@ export default defineDataset<Input>({
   solution: 'std.js',
   seed: 'fixed-seed',
   format: ({ n, m }) => fmt.line(n, m),
-  validate: ({ n, m }) => (n > 0 && m > 0) ? true : true,
   cases: [
-    { name: 'sample', input: { n: 3, m: 4 } },
+    {
+      name: 'sample',
+      input: { n: 3, m: 4 },
+      output: fmt.line(12),
+    },
+    {
+      name: 'random',
+      generate: ({ g }) => ({ n: g.pick([2, 3, 4]), m: 5 }),
+    },
   ],
 });
 `, 'utf8');
 
     let error: unknown = null;
     try {
-      await execa(process.execPath, [
+      await runLocalAiMaker([
         'run',
         'examples/ai-maker.ts',
         '--statement',
@@ -112,14 +171,12 @@ export default defineDataset<Input>({
         responsePath,
         '--repair',
         '0',
-      ], {
-        cwd: process.cwd(),
-      });
+      ]);
     } catch (caught) {
       error = caught;
     }
 
     const message = error instanceof Error ? error.message : String(error);
-    expect(message).toMatch(/descriptive, not a generic value like fixed-seed|identical branches/);
+    expect(message).toMatch(/cases must not define output|g\.pick is not available/);
   });
 });

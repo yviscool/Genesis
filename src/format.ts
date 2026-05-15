@@ -83,7 +83,7 @@ export function renderFormatDocument(document: FormatDocument | FormatNode): str
 function normalizeRow(row: FormatNode | readonly FormatAtom[] | FormatAtom): FormatNode {
   if (isFormatNode(row)) return row;
   if (Array.isArray(row)) return fmt.line(...row);
-  return fmt.line(row);
+  return fmt.line(row as FormatAtom);
 }
 
 function renderNode(node: FormatNode): string {

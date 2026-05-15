@@ -53,6 +53,7 @@
     "test": "bun test",
     "dev": "bun --watch run examples/make.ts",
     "build": "bun run build.ts",
+    "build:ai-contract": "bun run scripts/build-ai-contract.ts",
     "release:check": "node scripts/release-check.mjs",
     "release": "bun run release:check && bun publish"
   },

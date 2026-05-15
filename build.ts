@@ -1,9 +1,19 @@
 import path from 'node:path';
 import { build as tsdownBuild } from 'tsdown';
+import { writeAiContractArtifacts } from './scripts/build-ai-contract';
 
 const OUT_DIR = 'dist';
 const BUN_OUT_DIR = path.join(OUT_DIR, 'bun');
 const EXTERNAL = ['typescript'];
+
+console.log('Generating AI contract artifacts...');
+try {
+  await writeAiContractArtifacts(process.cwd());
+  console.log('AI contract artifacts generated.');
+} catch (error) {
+  console.error('AI contract generation failed:', error);
+  throw error;
+}
 
 console.log('Building library (CJS + ESM) and copying assets with tsdown...');
 try {
