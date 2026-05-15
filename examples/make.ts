@@ -15,8 +15,8 @@ export default defineDataset<Input>({
   runTimeoutMs: 5000,
 
   format: ({ n, k, a }) => fmt.lines(
-    [n, k],
-    a,
+    fmt.line(n, k),
+    fmt.line(...a),
   ),
 
   validate: ({ n, k, a }) => {

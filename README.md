@@ -35,8 +35,8 @@ export default defineDataset<Input>({
   seed: 20260505,
 
   format: ({ n, a }) => fmt.lines(
-    [n],
-    a,
+    fmt.line(n),
+    fmt.line(...a),
   ),
 
   validate: ({ n, a }) =>

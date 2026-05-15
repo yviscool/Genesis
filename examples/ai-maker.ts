@@ -3,10 +3,11 @@ import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { type DatasetRunResult, generateDataset, loadDatasetFromFile, validateDataset } from '../src/dataset-runner';
 import {
-  type AiContractSelection,
+  AI_BASE_METHOD_SIGNATURES,
+  AI_CHARSET_PROPERTIES,
+  AI_FMT_METHOD_SIGNATURES,
+  AI_GENERATOR_METHOD_SIGNATURES,
   renderAiGenesisContractDts,
-  resolveAiContractAllowance,
-  selectAiContract,
 } from '../src/ai-contract';
 
 type Lang = 'js' | 'cpp' | 'py';
@@ -348,9 +349,7 @@ function extractSection(text: string, name: string): string {
 }
 
 function normalizeMakerTs(code: string): string {
-  return code
-    .replace(/\bg\.pick\(/g, 'g.sample(')
-    .trim();
+  return code.trim();
 }
 
 function parseDraft(text: string, needSolution: boolean): Draft {
@@ -366,48 +365,7 @@ function parseDraft(text: string, needSolution: boolean): Draft {
   return draft;
 }
 
-function extractSectionBlock(statement: string, headings: string[]): string {
-  const lines = statement.split(/\r?\n/);
-  const normalized = headings.map(item => item.toLowerCase());
-  const collected: string[] = [];
-  let active = false;
-
-  for (const line of lines) {
-    const trimmed = line.trim();
-    const heading = trimmed.replace(/^#+\s*/, '').toLowerCase();
-
-    if (normalized.includes(heading)) {
-      active = true;
-      collected.push(line);
-      continue;
-    }
-
-    if (active && /^#+\s+/.test(trimmed)) {
-      break;
-    }
-
-    if (active) {
-      collected.push(line);
-    }
-  }
-
-  return collected.join('\n').trim();
-}
-
-function extractImportantSections(statement: string): string {
-  const parts = [
-    extractSectionBlock(statement, ['输入格式', 'input format', 'input']),
-    extractSectionBlock(statement, ['输出格式', 'output format', 'output']),
-    extractSectionBlock(statement, ['数据范围', 'constraints', 'limits']),
-    extractSectionBlock(statement, ['样例', 'sample', 'samples']),
-    extractSectionBlock(statement, ['说明', 'note', 'notes', 'guarantee', 'guarantees']),
-  ].filter(Boolean);
-
-  return parts.join('\n\n').trim();
-}
-
 function buildInitialPrompt(context: PromptContext): string {
-  const highlights = extractImportantSections(context.statement);
   const lines = [
     'Task: given the Genesis contract and the problem statement, generate a correct reference solution if needed and a correct maker.ts.',
     'The user only wants final working outputs.',
@@ -422,31 +380,16 @@ function buildInitialPrompt(context: PromptContext): string {
   lines.push('<<<MAKER_TS>>>');
   lines.push('No other sections.');
   lines.push('maker.ts requirements:');
-  lines.push('- 5 to 10 test cases');
-  lines.push('- each case must have a distinct purpose');
-  lines.push('- prefer minimal total size while covering many bug types');
-  lines.push('- at most 2 extreme cases');
-  lines.push('- random cases must be built on clear structural skeletons, never pure random');
-  lines.push('- if limits are missing, infer conservative limits and encode them in validate');
-  lines.push("- import only `defineDataset` and `fmt` from 'genesis-kit'");
-  lines.push('- always define validate to encode the invariants you rely on');
-  lines.push('- seed must be a descriptive lowercase kebab-case string, never a generic value like fixed-seed');
-  lines.push('- avoid decorative dead code such as ternaries with identical branches');
   lines.push(`- maker.ts must use solution: '${context.solutionFile}' exactly`);
   lines.push('- use only APIs present in the Genesis contract');
-  lines.push('- do not use nonexistent methods, guessed fields, or legacy syntax');
-  lines.push('- if a helper is not listed in the contract, implement it in plain TypeScript instead of guessing a Genesis API');
+  lines.push('- if the contract does not provide a helper, write plain TypeScript instead of inventing a Genesis API');
+  lines.push('- maker.ts must be executable by the local Genesis runner without manual edits');
 
   if (context.needSolution) {
     lines.push(`${languageHint[context.lang]} Save it as ${context.solutionFile}.`);
   } else {
     lines.push(`A reference solution is already provided as ${context.solutionFile}. maker.ts must match it exactly.`);
     lines.push('If the statement feels ambiguous, prefer the provided reference solution semantics over your own reinterpretation.');
-  }
-
-  if (highlights) {
-    lines.push('Critical I/O and limits excerpt:');
-    lines.push(highlights);
   }
 
   lines.push('Genesis contract declaration file begins:');
@@ -471,7 +414,6 @@ function buildRepairPrompt(
   previous: Draft,
   issues: readonly MakerIssue[],
 ): string {
-  const highlights = extractImportantSections(context.statement);
   const lines = [
     'The previous answer failed local validation or generation. Fix it.',
     'The Genesis contract below is a TypeScript declaration file. Treat it as the only API truth.',
@@ -488,19 +430,7 @@ function buildRepairPrompt(
   for (const issue of issues) {
     lines.push(`- [${issue.code}] ${issue.message}`);
   }
-  lines.push('Do not use g.pick(). Use g.sample().');
-  lines.push('Do not use case.output.');
-  lines.push('Do not use fmt`...`.');
-  lines.push("- Import only `defineDataset` and `fmt` from 'genesis-kit'.");
-  lines.push('Keep validate() present and aligned with the generated structure.');
-  lines.push('Use a descriptive kebab-case string seed, not a generic seed.');
-  lines.push('Remove dead code and identical-branch ternaries.');
-  lines.push('If a helper is missing from the contract, write plain TypeScript instead of inventing a Genesis method.');
-
-  if (highlights) {
-    lines.push('Critical I/O and limits excerpt:');
-    lines.push(highlights);
-  }
+  lines.push('Fix the issues strictly according to the Genesis contract and the statement semantics.');
 
   lines.push('Genesis contract declaration file begins:');
   lines.push(context.contract);
@@ -568,15 +498,13 @@ async function materializeRuntimeMaker(jobDir: string, makerTs: string): Promise
 function lintMakerTs(
   code: string,
   solutionFile: string,
-  selection: AiContractSelection,
 ): MakerIssue[] {
   const issues: MakerIssue[] = [];
-  const allowance = resolveAiContractAllowance(selection);
-  const allowedFmtMethods = new Set(allowance.fmtMethods);
-  const allowedGeneratorMethods = new Set(allowance.generatorMethods);
-  const allowedBaseMethods = new Set(allowance.baseMethods);
-  const allowedCharsetProperties = new Set(allowance.charsetProperties);
-  const allowedGeneratorPropertyRoots = new Set(allowance.generatorPropertyRoots);
+  const allowedFmtMethods = new Set(Object.keys(AI_FMT_METHOD_SIGNATURES));
+  const allowedGeneratorMethods = new Set(Object.keys(AI_GENERATOR_METHOD_SIGNATURES));
+  const allowedBaseMethods = new Set(Object.keys(AI_BASE_METHOD_SIGNATURES));
+  const allowedCharsetProperties = new Set(Object.keys(AI_CHARSET_PROPERTIES));
+  const allowedGeneratorPropertyRoots = new Set(['CHARSET', 'base']);
 
   if (!/import\s*{\s*[^}]*\bdefineDataset\b[^}]*\bfmt\b[^}]*}\s*from\s*['"]genesis-kit['"]/.test(code)) {
     issues.push(issue('import-rule', "maker.ts must import defineDataset and fmt from 'genesis-kit'"));
@@ -593,13 +521,8 @@ function lintMakerTs(
   } else if (!new RegExp(`solution\\s*:\\s*['"\`]${escapeRegExp(solutionFile)}['"\`]`).test(code)) {
     issues.push(issue('solution', `maker.ts solution must be '${solutionFile}'`));
   }
-  if (!/seed\s*:/.test(code)) {
-    issues.push(issue('seed', 'maker.ts must define seed'));
-  } else {
-    issues.push(...lintSeedLiteral(code));
-  }
+  if (!/seed\s*:/.test(code)) issues.push(issue('seed', 'maker.ts must define seed'));
   if (!/format\s*:/.test(code)) issues.push(issue('format', 'maker.ts must define format'));
-  if (!/validate\s*:/.test(code)) issues.push(issue('validate', 'maker.ts must define validate for semantic guardrails'));
   if (!/cases\s*:/.test(code)) issues.push(issue('cases', 'maker.ts must define cases'));
   if (/output\s*:/.test(code)) issues.push(issue('case-output', 'cases must not define output'));
   if (/fmt`/.test(code)) issues.push(issue('legacy-fmt', 'legacy fmt template syntax is not allowed'));
@@ -612,7 +535,6 @@ function lintMakerTs(
   issues.push(...scanUnsupportedMethodCalls(code, 'g.base', allowedBaseMethods, 'g.base', 'unsupported-base-method'));
   issues.push(...scanUnsupportedPropertyRoots(code, allowedGeneratorPropertyRoots));
   issues.push(...scanUnsupportedCharsetProperties(code, allowedCharsetProperties));
-  issues.push(...scanRedundantTernaries(code));
 
   return issues;
 }
@@ -636,36 +558,6 @@ function normalizeIssues(error: unknown, fallbackCode: string): MakerIssue[] {
 
   const message = error instanceof Error ? error.message : String(error);
   return [issue(fallbackCode, message)];
-}
-
-function lintSeedLiteral(code: string): MakerIssue[] {
-  const match = code.match(/seed\s*:\s*['"`]([^'"`]+)['"`]/);
-  if (!match) {
-    return [issue('seed', 'maker.ts seed must be a descriptive string literal')];
-  }
-
-  const seed = match[1].trim();
-  const normalized = seed.toLowerCase();
-  const genericSeeds = new Set([
-    'seed',
-    'fixed-seed',
-    'random-seed',
-    'default-seed',
-    'dataset-seed',
-    'example-seed',
-    'test-seed',
-    'fixed',
-    'random',
-    'default',
-  ]);
-
-  if (!/^[a-z0-9]+(?:-[a-z0-9]+){1,}$/.test(seed)) {
-    return [issue('seed', 'maker.ts seed must use lowercase kebab-case like problem-slug-dataset-v1')];
-  }
-  if (genericSeeds.has(normalized)) {
-    return [issue('seed', 'maker.ts seed must be descriptive, not a generic value like fixed-seed')];
-  }
-  return [];
 }
 
 function scanUnsupportedMethodCalls(
@@ -719,35 +611,6 @@ function scanUnsupportedCharsetProperties(
   return [...properties].map(property => issue('unsupported-charset', `g.CHARSET.${property} is not available in the Genesis contract for this problem`));
 }
 
-function scanRedundantTernaries(code: string): MakerIssue[] {
-  const messages = new Set<string>();
-
-  for (const line of code.split(/\r?\n/)) {
-    if (!line.includes('?') || !line.includes(':')) continue;
-    const ternary = line.match(/\?(.+):(.+)/);
-    if (!ternary) continue;
-
-    const whenTrue = normalizeExpressionFragment(ternary[1]);
-    const whenFalse = normalizeExpressionFragment(ternary[2]);
-
-    if (whenTrue && whenTrue === whenFalse) {
-      messages.add('maker.ts must not contain ternaries with identical branches');
-    }
-  }
-
-  return [...messages].map(message => issue('dead-code', message));
-}
-
-function normalizeExpressionFragment(fragment: string): string {
-  return fragment
-    .replace(/\/\/.*$/, '')
-    .replace(/[),;\]}]+$/g, '')
-    .replace(/,+$/g, '')
-    .replace(/^\(+|\)+$/g, '')
-    .replace(/\s+/g, '')
-    .trim();
-}
-
 function formatFailures(result: DatasetRunResult): string {
   const failed = result.results
     .filter(item => item.status === 'failure')
@@ -768,7 +631,6 @@ function formatFailures(result: DatasetRunResult): string {
 
 async function materializeAndRun(params: {
   jobDir: string;
-  selection: AiContractSelection;
   contract: string;
   statement: string;
   solutionFile: string;
@@ -776,7 +638,7 @@ async function materializeAndRun(params: {
   providedSolutionSource?: string;
   draft: Draft;
 }): Promise<DatasetRunResult> {
-  const lintIssues = lintMakerTs(params.draft.makerTs, params.solutionFile, params.selection);
+  const lintIssues = lintMakerTs(params.draft.makerTs, params.solutionFile);
   if (lintIssues.length > 0) {
     throw new AiWorkflowError(lintIssues);
   }
@@ -785,7 +647,6 @@ async function materializeAndRun(params: {
   await ensureDir(params.jobDir);
   await fs.writeFile(path.join(params.jobDir, 'problem.md'), `${params.statement.trim()}\n`, 'utf8');
   await fs.writeFile(path.join(params.jobDir, 'genesis-contract.d.ts'), `${params.contract.trim()}\n`, 'utf8');
-  await fs.writeFile(path.join(params.jobDir, 'contract-selection.json'), `${JSON.stringify(params.selection, null, 2)}\n`, 'utf8');
   await fs.writeFile(makerPath, `${params.draft.makerTs.trim()}\n`, 'utf8');
   await materializeLocalGenesisPackage(params.jobDir);
   const runtimeMakerPath = await materializeRuntimeMaker(params.jobDir, params.draft.makerTs);
@@ -830,8 +691,7 @@ async function main(): Promise<void> {
     throw new Error('Problem statement is empty.');
   }
 
-  const selection = selectAiContract(statement);
-  const contract = renderAiGenesisContractDts(selection).trim();
+  const contract = renderAiGenesisContractDts().trim();
   const jobName = normalizeJobName(options.name);
   const jobDir = path.join(path.resolve(options.jobRoot), jobName);
   const needSolution = !options.solutionPath;
@@ -890,7 +750,6 @@ async function main(): Promise<void> {
     try {
       finalResult = await materializeAndRun({
         jobDir,
-        selection,
         contract,
         statement,
         solutionFile,
