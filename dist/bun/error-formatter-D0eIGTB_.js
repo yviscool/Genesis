@@ -1,0 +1,4 @@
+import e from"picocolors";import t from"node:fs";function n(n,r){let i=[],a=/^(.+?):(\d+):(\d+):\s*(error|warning):\s*(.+)$/gm,o,s=[];for(;(o=a.exec(n))!==null;)s.push({file:o[1],line:Number.parseInt(o[2],10),col:Number.parseInt(o[3],10),type:o[4],message:o[5]});if(s.length===0)return n;for(let n of s){let a=n.type===`error`?`[ERROR]`:`[WARN]`,o=n.type===`error`?e.red:e.yellow;i.push(o(`${a} ${n.file}:${n.line}:${n.col}`)),i.push(`  ${n.message}`);let s=r||n.file;if(t.existsSync(s))try{let r=t.readFileSync(s,`utf-8`).split(`
+`)[n.line-1];if(r){i.push(``),i.push(e.dim(`  ${n.line} | `)+r);let t=` `.repeat(Math.max(0,n.col-1))+e.red(`^`);i.push(e.dim(`    | `)+t)}}catch{}i.push(``)}return i.join(`
+`)}export{n as formatCompilerError};
+//# sourceMappingURL=error-formatter-D0eIGTB_.js.map
