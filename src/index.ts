@@ -48,3 +48,18 @@ export type {
   DatasetRunResult,
   DatasetValidationSummary,
 } from './dataset-runner';
+
+export {
+  AI_BASE_METHOD_SIGNATURES,
+  AI_CHARSET_PROPERTIES,
+  AI_FMT_METHOD_SIGNATURES,
+  AI_GENERATOR_METHOD_SIGNATURES,
+  analyzeProblemStatement,
+  isAiFormatMethodName,
+  isAiGeneratorMethodName,
+  renderAiGenesisContractDts,
+  renderAiGenesisContractMarkdown,
+  resolveAiContractAllowance,
+  selectAiContract,
+} from './ai-contract';
+export type { AiContractAllowance, AiContractSelection, AiProblemProfile } from './ai-contract';
