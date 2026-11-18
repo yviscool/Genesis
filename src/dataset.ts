@@ -1,3 +1,4 @@
+import type { DatasetConstraints } from './constraints';
 import type { FormatDocument, FormatNode } from './format';
 import type { DatasetGenerator, SeedInput } from './generator/factory';
 import type { OjProfile } from './types';
@@ -64,6 +65,8 @@ export interface DatasetConfig<TInput> {
   ojProfile?: OjProfile;
   stackSizeBytes?: number;
   manifestPath?: string | false;
+  /** Declarative per-field checks, evaluated before `validate`. */
+  constraints?: DatasetConstraints;
   format(input: TInput): FormatDocument | FormatNode;
   validate?(
     input: TInput,

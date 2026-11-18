@@ -81,12 +81,14 @@ describe('Genesis v2 dataset runner', () => {
     const first = await generateDataset(makeDataset(firstOut));
     const second = await generateDataset(makeDataset(secondOut));
 
-    expect(first.manifest?.version).toBe(2);
+    expect(first.manifest?.version).toBe(3);
     expect(Object.keys(first.manifest ?? {})).toEqual([
       'version',
       'tool',
       'generatedAt',
+      'pathBase',
       'dataset',
+      'sources',
       'execution',
       'replay',
       'summary',
@@ -274,7 +276,12 @@ export default defineDataset({
 
       expect(result.summary).toMatchObject({ totalCases: 1, succeeded: 1, failed: 0 });
       expect(await fs.readFile(path.join(externalDir, 'module-data', '1.in'), 'utf8')).toBe('99');
-      expect(result.manifest?.dataset.modulePath).toBe(makeFile.replaceAll(path.sep, '/'));
+      // Every manifest path is relative to the manifest file, so this stays portable.
+      expect(result.manifest?.dataset.modulePath).toBe('make.ts');
+      expect(result.manifest?.dataset.solution).toBe('std.js');
+      expect(result.manifest?.cases[0].input?.path).toBe('module-data/1.in');
+      expect(result.manifest?.sources.maker?.sha256).toMatch(/^[a-f0-9]{64}$/);
+      expect(result.manifest?.sources.solution.sha256).toMatch(/^[a-f0-9]{64}$/);
     } finally {
       await fs.rm(externalDir, { recursive: true, force: true });
     }
@@ -293,16 +300,19 @@ export default defineDataset({
     await expect(fs.stat(path.join(targetDir, 'check.ts'))).rejects.toThrow();
   });
 
-  test('manifest schema documents the v2 contract', async () => {
+  test('manifest schema documents the v3 contract', async () => {
     const schema = JSON.parse(await fs.readFile(path.join(process.cwd(), 'manifest.schema.json'), 'utf8'));
 
-    expect(schema.title).toBe('Genesis Dataset Manifest v2');
-    expect(schema.properties.version.const).toBe(2);
+    expect(schema.title).toBe('Genesis Dataset Manifest v3');
+    expect(schema.properties.version.const).toBe(3);
+    expect(schema.properties.pathBase.const).toBe('manifest');
     expect(schema.required).toEqual([
       'version',
       'tool',
       'generatedAt',
+      'pathBase',
       'dataset',
+      'sources',
       'execution',
       'replay',
       'summary',

@@ -5,8 +5,6 @@ let node_async_hooks = require("node:async_hooks");
 let es_toolkit = require("es-toolkit");
 let picocolors = require("picocolors");
 picocolors = require_chunk.__toESM(picocolors);
-let node_fs = require("node:fs");
-node_fs = require_chunk.__toESM(node_fs);
 let node_fs_promises = require("node:fs/promises");
 node_fs_promises = require_chunk.__toESM(node_fs_promises);
 let node_os = require("node:os");
@@ -18,6 +16,9 @@ let execa = require("execa");
 let consola = require("consola");
 let ora = require("ora");
 ora = require_chunk.__toESM(ora);
+let node_fs = require("node:fs");
+node_fs = require_chunk.__toESM(node_fs);
+let oxc_parser = require("oxc-parser");
 
 //#region src/dataset.ts
 function defineDataset(config) {
@@ -28,6 +29,153 @@ function defineDataset(config) {
 }
 function isDataset(value) {
 	return Boolean(value && typeof value === "object" && value.__genesisDataset === 2 && typeof value.config === "object");
+}
+
+//#endregion
+//#region src/constraints.ts
+const KEY_PATTERN = /^([A-Za-z_$][\w$]*)((?:\[\d+\]|\[\*\])*)$/;
+function parseConstraintPath(pattern) {
+	const segments = [];
+	for (const part of pattern.split(".")) {
+		const match = KEY_PATTERN.exec(part);
+		if (!match) throw new Error(`Unsupported constraint path '${pattern}': '${part}' is not a valid field segment.`);
+		segments.push({
+			kind: "key",
+			name: match[1]
+		});
+		for (const indexMatch of match[2].matchAll(/\[(\d+|\*)\]/g)) {
+			const raw = indexMatch[1];
+			segments.push({
+				kind: "index",
+				index: raw === "*" ? "*" : Number(raw)
+			});
+		}
+	}
+	return segments;
+}
+/** Walk `input` following `segments`, expanding `[*]` into one entry per element. */
+function resolve(root, segments) {
+	let current = [{
+		value: root,
+		path: ""
+	}];
+	for (const segment of segments) {
+		const next = [];
+		for (const item of current) {
+			if (segment.kind === "key") {
+				if (!item.value || typeof item.value !== "object") continue;
+				const child = item.value[segment.name];
+				if (child === void 0) continue;
+				next.push({
+					value: child,
+					path: item.path ? `${item.path}.${segment.name}` : segment.name
+				});
+				continue;
+			}
+			const path$6 = `${item.path}[${segment.index === "*" ? "" : segment.index}]`;
+			if (segment.index === "*") {
+				if (!Array.isArray(item.value)) continue;
+				for (let index = 0; index < item.value.length; index += 1) next.push({
+					value: item.value[index],
+					path: `${item.path}[${index}]`
+				});
+			} else {
+				if (!Array.isArray(item.value)) continue;
+				if (segment.index >= item.value.length) continue;
+				next.push({
+					value: item.value[segment.index],
+					path: path$6
+				});
+			}
+		}
+		current = next;
+		if (current.length === 0) return [];
+	}
+	return current;
+}
+function resolveScalar(root, pattern) {
+	const hits = resolve(root, parseConstraintPath(pattern));
+	if (hits.length !== 1) return void 0;
+	const value = hits[0]?.value;
+	if (typeof value === "number" || typeof value === "string") return value;
+}
+function describe(value) {
+	if (typeof value === "string") return JSON.stringify(value);
+	if (Array.isArray(value)) return `array(length=${value.length})`;
+	return String(value);
+}
+/**
+* Check `input` against `constraints`.
+*
+* Returns a human readable message on the first violation, or `null` when the
+* input satisfies every constraint.
+*/
+function checkConstraints(input, constraints) {
+	for (const [pattern, spec] of Object.entries(constraints)) {
+		const hits = resolve(input, parseConstraintPath(pattern));
+		if (hits.length === 0) {
+			if (pattern.includes("[*]") && isEmptyWildcardTarget(input, pattern)) continue;
+			return `constraint '${pattern}' did not resolve to any value`;
+		}
+		for (const { value, path: path$6 } of hits) {
+			const label = path$6 || pattern;
+			if (spec.int && (typeof value !== "number" || !Number.isInteger(value))) return `${label} must be an integer, got ${describe(value)}`;
+			if (spec.oneOf && !spec.oneOf.includes(value)) return `${label} must be one of [${spec.oneOf.join(", ")}], got ${describe(value)}`;
+			if (spec.len !== void 0 || spec.minLen !== void 0 || spec.maxLen !== void 0) {
+				const actual = Array.isArray(value) || typeof value === "string" ? value.length : void 0;
+				if (actual === void 0) return `${label} must be an array or string to have a length, got ${describe(value)}`;
+				for (const [rule, bound] of [
+					["len", spec.len],
+					["minLen", spec.minLen],
+					["maxLen", spec.maxLen]
+				]) {
+					if (bound === void 0) continue;
+					const wanted = typeof bound === "number" ? bound : resolveScalar(input, bound);
+					if (typeof wanted !== "number") return `constraint '${pattern}' references unknown field '${String(bound)}'`;
+					if (rule === "len" && actual !== wanted) return `${label} length must be ${wanted}, got ${actual}`;
+					if (rule === "minLen" && actual < wanted) return `${label} length ${actual} is below minimum ${wanted}`;
+					if (rule === "maxLen" && actual > wanted) return `${label} length ${actual} exceeds maximum ${wanted}`;
+				}
+				continue;
+			}
+			if (typeof value !== "number") {
+				if (spec.min !== void 0 || spec.max !== void 0 || spec.ref !== void 0) return `${label} must be a number, got ${describe(value)}`;
+				continue;
+			}
+			let upper = spec.max;
+			let upperLabel = spec.max === void 0 ? void 0 : String(spec.max);
+			if (spec.ref !== void 0) {
+				const referenced = resolveScalar(input, spec.ref);
+				if (typeof referenced !== "number") return `constraint '${pattern}' references unknown field '${spec.ref}'`;
+				if (upper === void 0 || referenced < upper) {
+					upper = referenced;
+					upperLabel = `${spec.ref}=${referenced}`;
+				}
+			}
+			if (spec.min !== void 0 && value < spec.min) return `${label} = ${value} is below minimum ${spec.min}`;
+			if (upper !== void 0 && value > upper) return `${label} = ${value} exceeds maximum ${upperLabel}`;
+			if (typeof spec.eq === "number" && value !== spec.eq) return `${label} must equal ${spec.eq}, got ${value}`;
+			if (typeof spec.eq === "string") {
+				const wanted = resolveScalar(input, spec.eq);
+				if (typeof wanted !== "number") return `constraint '${pattern}' references unknown field '${spec.eq}'`;
+				if (value !== wanted) return `${label} must equal ${spec.eq}=${wanted}, got ${value}`;
+			}
+		}
+	}
+	return null;
+}
+/**
+* True when `pattern` contains `[*]` and the collection it expands over exists
+* but is empty. Used to keep `xs[*]` vacuously true for empty arrays.
+*/
+function isEmptyWildcardTarget(input, pattern) {
+	const wildcardIndex = pattern.indexOf("[*]");
+	const parentPattern = pattern.slice(0, wildcardIndex);
+	if (!parentPattern) return false;
+	const parentHits = resolve(input, parseConstraintPath(parentPattern));
+	if (parentHits.length !== 1) return false;
+	const value = parentHits[0]?.value;
+	return Array.isArray(value) && value.length === 0;
 }
 
 //#endregion
@@ -42,11 +190,14 @@ const fmt = {
 	lines(...rows) {
 		return createFormatDocument(rows.map((row) => normalizeRow(row)));
 	},
-	table(rows) {
-		return {
+	table(rows, options) {
+		const node = {
 			kind: "table",
 			rows
 		};
+		if (options?.sep !== void 0) node.sep = options.sep;
+		if (options?.rowSep !== void 0) node.rowSep = options.rowSep;
+		return node;
 	},
 	grid(rows) {
 		return {
@@ -59,8 +210,63 @@ const fmt = {
 			kind: "raw",
 			text
 		};
+	},
+	join(sep, ...items) {
+		return {
+			kind: "line",
+			items,
+			sep
+		};
+	},
+	flat(values) {
+		return {
+			kind: "line",
+			items: values
+		};
+	},
+	tuple(...items) {
+		return {
+			kind: "line",
+			items: [
+				"(",
+				...joinWithCommas(items),
+				")"
+			],
+			sep: ""
+		};
+	},
+	seq(nodes, sep = "\n") {
+		return {
+			kind: "seq",
+			nodes,
+			sep
+		};
+	},
+	block(...nodes) {
+		return {
+			kind: "seq",
+			nodes,
+			sep: "\n\n"
+		};
+	},
+	rows(rows, options) {
+		const table = fmt.table(rows, options);
+		if (!options?.header) return table;
+		return {
+			kind: "seq",
+			nodes: [fmt.line(...options.header), table],
+			sep: "\n"
+		};
 	}
 };
+function joinWithCommas(items) {
+	const out = [];
+	for (let index = 0; index < items.length; index += 1) {
+		if (index > 0) out.push(",");
+		out.push(items[index]);
+	}
+	return out;
+}
 function createFormatDocument(nodes) {
 	return {
 		__genesisFormat: 2,
@@ -70,7 +276,7 @@ function createFormatDocument(nodes) {
 function isFormatNode(value) {
 	if (!value || typeof value !== "object") return false;
 	const kind = value.kind;
-	return kind === "line" || kind === "table" || kind === "grid" || kind === "raw";
+	return kind === "line" || kind === "table" || kind === "grid" || kind === "raw" || kind === "seq";
 }
 function isFormatDocument(value) {
 	return Boolean(value && typeof value === "object" && value.__genesisFormat === 2 && Array.isArray(value.nodes) && value.nodes.every(isFormatNode));
@@ -90,10 +296,11 @@ function normalizeRow(row) {
 }
 function renderNode(node) {
 	switch (node.kind) {
-		case "line": return node.items.map(renderAtom).join(" ");
-		case "table": return node.rows.map((row) => row.map(renderAtom).join(" ")).join("\n");
+		case "line": return node.items.map(renderAtom).join(node.sep ?? " ");
+		case "table": return node.rows.map((row) => row.map(renderAtom).join(node.sep ?? " ")).join(node.rowSep ?? "\n");
 		case "grid": return node.rows.map((row) => Array.isArray(row) ? row.map(renderAtom).join("") : row).join("\n");
 		case "raw": return node.text;
+		case "seq": return node.nodes.map(renderNode).join(node.sep);
 	}
 }
 function renderAtom(value) {
@@ -1126,10 +1333,6 @@ function createSeededRng(seed) {
 }
 
 //#endregion
-//#region package.json
-var version = "2.0.0";
-
-//#endregion
 //#region src/language.ts
 const LANGUAGES = [
 	{
@@ -1593,6 +1796,216 @@ function getCompilerHelpMessage(lang) {
 }
 
 //#endregion
+//#region package.json
+var version = "2.1.0";
+
+//#endregion
+//#region src/manifest.ts
+/**
+* Manifest format version.
+*
+* v2 stored absolute, machine-specific paths (temp directories included) and had no
+* fingerprint of the inputs that produced the data, so a manifest could not answer
+* "is this data still in sync with maker.ts / std.py?".
+*
+* v3 makes the manifest portable and self-verifying:
+*   - every path is relative to the manifest file itself (`pathBase: 'manifest'`)
+*   - `sources` records the sha256 of the maker module and the standard solution
+*   - `execution` records the runtime and relative run arguments
+*/
+const MANIFEST_VERSION = 3;
+/** Documents the anchor used by every path stored in the manifest. */
+const MANIFEST_PATH_BASE = "manifest";
+function toPortablePath(filePath) {
+	return filePath.split(node_path.default.sep).join(node_path.default.posix.sep).replaceAll(node_path.default.win32.sep, node_path.default.posix.sep);
+}
+/**
+* Express `target` relative to `baseDir` using forward slashes.
+*
+* Paths that escape `baseDir` stay absolute: a relative path with `../..` is harder to
+* audit than an obvious absolute one, and both are equally unusable on another machine.
+*/
+function relativizePath(target, baseDir) {
+	const absoluteTarget = node_path.default.resolve(target);
+	const absoluteBase = node_path.default.resolve(baseDir);
+	const relative = node_path.default.relative(absoluteBase, absoluteTarget);
+	if (relative === "") return ".";
+	if (relative.startsWith("..") || node_path.default.isAbsolute(relative)) return toPortablePath(absoluteTarget);
+	return toPortablePath(relative);
+}
+/** Turn a manifest-relative path back into an absolute one. */
+function resolveManifestPath(manifestPath, storedPath) {
+	if (node_path.default.isAbsolute(storedPath)) return node_path.default.normalize(storedPath);
+	return node_path.default.resolve(node_path.default.dirname(node_path.default.resolve(manifestPath)), storedPath);
+}
+/** Where the manifest lives when the dataset does not pin an explicit path. */
+function defaultManifestPath(config) {
+	if (config.manifestPath === false) return null;
+	if (typeof config.manifestPath === "string") return node_path.default.resolve(config.manifestPath);
+	const outputDir = node_path.default.resolve(config.outputDir ?? "data");
+	const parentDir = node_path.default.dirname(outputDir);
+	const name = node_path.default.basename(outputDir) || "data";
+	return node_path.default.join(parentDir, `${name}.manifest.json`);
+}
+/** Stream a file through sha256 while counting bytes and newlines. */
+async function digestFile(filePath) {
+	const stat = await node_fs_promises.default.stat(filePath);
+	const sha256 = node_crypto.default.createHash("sha256");
+	let newlineCount = 0;
+	await new Promise((resolve$1, reject) => {
+		const stream = (0, node_fs.createReadStream)(filePath);
+		stream.on("data", (chunk$1) => {
+			const buffer = typeof chunk$1 === "string" ? Buffer.from(chunk$1) : chunk$1;
+			sha256.update(buffer);
+			for (const byte of buffer) if (byte === 10) newlineCount++;
+		});
+		stream.once("error", reject);
+		stream.once("end", () => resolve$1());
+	});
+	return {
+		sha256: sha256.digest("hex"),
+		bytes: stat.size,
+		lines: stat.size === 0 ? 0 : newlineCount + 1
+	};
+}
+async function describeFile(filePath, baseDir) {
+	const digest = await digestFile(filePath);
+	return {
+		path: relativizePath(filePath, baseDir),
+		sha256: digest.sha256,
+		bytes: digest.bytes,
+		lines: digest.lines
+	};
+}
+async function describeSource(filePath, baseDir) {
+	const digest = await digestFile(filePath);
+	return {
+		path: relativizePath(filePath, baseDir),
+		sha256: digest.sha256,
+		bytes: digest.bytes
+	};
+}
+/** True when `filePath` still hashes to what the manifest recorded. */
+async function sourceMatches(ref, filePath) {
+	if (!ref || !filePath) return false;
+	try {
+		return (await digestFile(filePath)).sha256 === ref.sha256;
+	} catch {
+		return false;
+	}
+}
+/**
+* The execution fingerprint must change whenever anything that can change the produced
+* `.out` files changes: the solution bytes, the runtime, and its arguments.
+*/
+function buildExecutionFingerprint(input) {
+	return node_crypto.default.createHash("sha256").update(JSON.stringify({
+		runArgs: input.runArgs,
+		executablePath: input.executablePath,
+		solutionSha256: input.solutionSha256
+	})).digest("hex");
+}
+function relativizeRunArgs(runArgs, executablePath, baseDir) {
+	const relativeExecutable = relativizePath(executablePath, baseDir);
+	return runArgs.map((arg) => {
+		if (arg === executablePath) return relativeExecutable;
+		if (node_path.default.isAbsolute(arg)) return relativizePath(arg, baseDir);
+		return arg;
+	});
+}
+/**
+* Build and persist a manifest. Returns `null` when `config.manifestPath === false`.
+*/
+async function writeManifest(input) {
+	const manifestPath = defaultManifestPath(input.config);
+	if (!manifestPath) return null;
+	const baseDir = node_path.default.dirname(manifestPath);
+	const { config } = input;
+	const solutionSource = await describeSource(config.solution, baseDir);
+	const makerSource = input.datasetFile ? await describeSource(input.datasetFile, baseDir) : null;
+	const cases = input.results.map((record) => ({
+		...record,
+		input: record.input ? rebaseFileRef(record.input, baseDir) : null,
+		output: record.output ? rebaseFileRef(record.output, baseDir) : null
+	}));
+	const execution = input.execution ? {
+		runtime: input.execution.runArgs[0] ?? "",
+		runArgs: relativizeRunArgs(input.execution.runArgs, input.execution.executablePath, baseDir),
+		executablePath: relativizePath(input.execution.executablePath, baseDir),
+		fingerprint: buildExecutionFingerprint({
+			runArgs: input.execution.runArgs,
+			executablePath: input.execution.executablePath,
+			solutionSha256: solutionSource.sha256
+		})
+	} : null;
+	const manifest = {
+		version: MANIFEST_VERSION,
+		tool: {
+			name: "genesis-kit",
+			version
+		},
+		generatedAt: (/* @__PURE__ */ new Date()).toISOString(),
+		pathBase: MANIFEST_PATH_BASE,
+		dataset: {
+			modulePath: input.datasetFile ? relativizePath(input.datasetFile, baseDir) : null,
+			solution: relativizePath(config.solution, baseDir),
+			outputDir: relativizePath(config.outputDir ?? "data", baseDir),
+			seed: String(config.seed),
+			startFrom: config.startFrom ?? 1,
+			runTimeoutMs: config.runTimeoutMs ?? 1e4,
+			caseConcurrency: config.caseConcurrency ?? null,
+			compiler: config.compiler ?? null,
+			compilerFlags: [...config.compilerFlags ?? []],
+			ojProfile: config.ojProfile ?? null,
+			stackSizeBytes: config.stackSizeBytes ?? null,
+			manifestPath: relativizePath(manifestPath, baseDir)
+		},
+		sources: {
+			maker: makerSource,
+			solution: solutionSource
+		},
+		execution,
+		replay: input.replay ? {
+			...input.replay,
+			outputDir: relativizePath(input.replay.outputDir, baseDir)
+		} : null,
+		summary: input.summary,
+		cases
+	};
+	await node_fs_promises.default.mkdir(node_path.default.dirname(manifestPath), { recursive: true });
+	await node_fs_promises.default.writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
+	return {
+		manifest,
+		manifestPath
+	};
+}
+/**
+* Case records carry absolute paths while the run is in flight. Rebase them onto the
+* manifest directory so the stored record is portable. The digest is already authoritative
+* — recomputing it here would re-read every byte we just wrote.
+*/
+function rebaseFileRef(ref, baseDir) {
+	if (!node_path.default.isAbsolute(ref.path)) return ref;
+	return {
+		...ref,
+		path: relativizePath(ref.path, baseDir)
+	};
+}
+async function readManifest(manifestPath) {
+	let raw;
+	try {
+		raw = await node_fs_promises.default.readFile(manifestPath, "utf8");
+	} catch {
+		return null;
+	}
+	return {
+		manifest: JSON.parse(raw),
+		manifestPath: node_path.default.resolve(manifestPath),
+		manifestDir: node_path.default.dirname(node_path.default.resolve(manifestPath))
+	};
+}
+
+//#endregion
 //#region src/dataset-runner.ts
 async function loadDatasetFromFile(entryFile = "make.ts") {
 	const resolvedPath = node_path.default.resolve(entryFile);
@@ -1618,14 +2031,23 @@ async function importDatasetModule(resolvedPath, moduleUrl) {
 	}
 	return import(moduleUrl);
 }
-async function validateDatasetFromFile(entryFile = "make.ts") {
-	return validateDataset(await loadDatasetFromFile(entryFile), { datasetFile: node_path.default.resolve(entryFile) });
+async function validateDatasetFromFile(entryFile = "make.ts", options = {}) {
+	return validateDataset(await loadDatasetFromFile(entryFile), {
+		...options,
+		datasetFile: node_path.default.resolve(entryFile)
+	});
 }
-async function generateDatasetFromFile(entryFile = "make.ts") {
-	return generateDataset(await loadDatasetFromFile(entryFile), { datasetFile: node_path.default.resolve(entryFile) });
+async function generateDatasetFromFile(entryFile = "make.ts", options = {}) {
+	return generateDataset(await loadDatasetFromFile(entryFile), {
+		...options,
+		datasetFile: node_path.default.resolve(entryFile)
+	});
 }
-async function replayDatasetFromFile(entryFile = "make.ts", selector) {
-	return replayDataset(await loadDatasetFromFile(entryFile), selector, { datasetFile: node_path.default.resolve(entryFile) });
+async function replayDatasetFromFile(entryFile = "make.ts", selector, options = {}) {
+	return replayDataset(await loadDatasetFromFile(entryFile), selector, {
+		...options,
+		datasetFile: node_path.default.resolve(entryFile)
+	});
 }
 async function validateDataset(dataset, options = {}) {
 	return runDataset(dataset, {
@@ -1658,20 +2080,23 @@ async function replayDataset(dataset, selector, options = {}) {
 		rootDir
 	});
 	const summary = summarize(results, Date.now() - startedAt);
-	const replay = {
-		caseNumber: selected.caseNumber,
-		caseName: selected.name,
-		repeatIndex: selected.repeatIndex,
-		outputDir: node_path.default.resolve(replayOutputDir)
-	};
 	return {
-		manifest: await writeManifest(runConfig, results, summary, {
+		manifest: (await writeManifest({
+			config: runConfig,
+			results,
+			summary,
 			datasetFile: options.datasetFile ?? null,
 			execution,
-			replay
-		}),
+			replay: {
+				caseNumber: selected.caseNumber,
+				caseName: selected.name,
+				repeatIndex: selected.repeatIndex,
+				outputDir: replayOutputDir
+			}
+		}))?.manifest ?? null,
 		results,
-		summary
+		summary,
+		executed: buildExecutedSummary(results, results)
 	};
 }
 function expandDatasetCases(config) {
@@ -1721,6 +2146,51 @@ function expandDatasetCases(config) {
 		seed: deriveCaseSeed(config.seed, entry.caseIndex, entry.caseNumber, entry.name, entry.repeatIndex)
 	}));
 }
+function parseOnlySpec(spec) {
+	return spec.split(",").map((token) => token.trim()).filter(Boolean).map((token) => {
+		const range = /^(\d+)\s*-\s*(\d+)$/.exec(token);
+		if (range) {
+			const from = Number(range[1]);
+			const to = Number(range[2]);
+			return {
+				kind: "range",
+				from: Math.min(from, to),
+				to: Math.max(from, to)
+			};
+		}
+		if (/^\d+$/.test(token)) return {
+			kind: "number",
+			value: Number(token)
+		};
+		return {
+			kind: "name",
+			value: token
+		};
+	});
+}
+/**
+* Narrow an expanded case list down to what the caller asked for.
+*
+* `from` / `to` are inclusive case-number bounds; `only` accepts a comma separated mix of
+* case numbers, inclusive ranges (`3-5`) and case names. Name matching is exact and applies
+* to every repeat of that case.
+*/
+function selectDatasetCases(cases, selector) {
+	if (!selector) return cases;
+	let selected = cases;
+	if (typeof selector.from === "number") selected = selected.filter((item) => item.caseNumber >= selector.from);
+	if (typeof selector.to === "number") selected = selected.filter((item) => item.caseNumber <= selector.to);
+	if (selector.only && selector.only.trim()) {
+		const tokens = parseOnlySpec(selector.only);
+		const names = new Set(tokens.filter((token) => token.kind === "name").map((token) => token.value));
+		const numbers = /* @__PURE__ */ new Set();
+		for (const token of tokens) if (token.kind === "number") numbers.add(token.value);
+		else if (token.kind === "range") for (let n = token.from; n <= token.to; n++) numbers.add(n);
+		selected = selected.filter((item) => numbers.has(item.caseNumber) || names.has(item.name));
+	}
+	if (selected.length === 0) throw new Error(`Case selector matched no cases (only=${selector.only ?? "-"}, from=${selector.from ?? "-"}, to=${selector.to ?? "-"}).`);
+	return selected;
+}
 function selectReplayCase(cases, selector) {
 	if (selector.caseNumber !== void 0) {
 		const matched = cases.find((item) => item.caseNumber === selector.caseNumber);
@@ -1738,32 +2208,142 @@ function selectReplayCase(cases, selector) {
 async function runDataset(dataset, options) {
 	assertDataset(dataset);
 	const rootDir = getDatasetRootDir(options.datasetFile);
-	const config = resolveConfigPaths(normalizeConfig({
+	const baseConfig = resolveDatasetConfig(dataset, {
+		datasetFile: options.datasetFile,
+		outputDir: options.outputDir,
+		manifestPath: options.manifestPath
+	});
+	const config = options.caseConcurrency && options.caseConcurrency > 0 ? {
+		...baseConfig,
+		caseConcurrency: Math.floor(options.caseConcurrency)
+	} : baseConfig;
+	const allCases = expandDatasetCases(config);
+	if (allCases.length === 0) throw new Error("Dataset contains no cases.");
+	const cases = selectDatasetCases(allCases, options.caseSelector);
+	const isPartialRun = Boolean(options.resume || options.caseSelector);
+	const previousManifestPath = defaultManifestPath(config);
+	const previousManifest = isPartialRun && options.mode === "generate" && previousManifestPath ? await loadPreviousManifest(previousManifestPath) : null;
+	const { pending, carryOver } = await planRun(allCases, cases, previousManifest, previousManifestPath ? node_path.default.dirname(previousManifestPath) : process.cwd(), Boolean(options.resume) && previousManifest ? await manifestSourcesMatch(previousManifest, options.datasetFile ?? null, config.solution) : false);
+	const startedAt = Date.now();
+	const cleanOutputDir = options.cleanOutputDir !== void 0 ? options.cleanOutputDir : !(options.resume || options.caseSelector || options.prune);
+	const { results: fresh, execution } = await runCasePipeline(config, pending, options.mode, {
+		cleanOutputDir,
+		outputDir: config.outputDir,
+		rootDir,
+		ensureTrailingNewline: options.ensureTrailingNewline
+	});
+	const results = isPartialRun ? mergeCaseRecords(allCases, carryOver, fresh) : fresh;
+	if (options.prune && options.mode === "generate") await pruneOrphanArtifacts(node_path.default.resolve(config.outputDir ?? "data"), new Set(allCases.map((item) => item.caseNumber)));
+	const summary = summarize(results, Date.now() - startedAt);
+	return {
+		manifest: options.mode === "generate" ? (await writeManifest({
+			config,
+			results,
+			summary,
+			datasetFile: options.datasetFile ?? null,
+			execution,
+			replay: options.replay ? {
+				caseNumber: options.replay.caseNumber,
+				caseName: options.replay.caseName,
+				repeatIndex: options.replay.repeatIndex,
+				outputDir: options.replay.outputDir
+			} : null
+		}))?.manifest ?? null : null,
+		results,
+		summary,
+		executed: buildExecutedSummary(results, fresh)
+	};
+}
+async function manifestSourcesMatch(manifest, datasetFile, solutionPath) {
+	if (!(manifest.sources?.maker ? await sourceMatches(manifest.sources.maker, datasetFile) : true)) return false;
+	return sourceMatches(manifest.sources?.solution, solutionPath);
+}
+async function loadPreviousManifest(manifestPath) {
+	try {
+		return (await readManifest(manifestPath))?.manifest ?? null;
+	} catch {
+		return null;
+	}
+}
+/**
+* Decide which cases to run and which previous records to keep.
+*
+* `reuseValid` (from `--resume`) lets a selected case be skipped when the manifest already
+* certifies it. Unselected cases are always carried over verbatim.
+*/
+async function planRun(allCases, selected, previous, manifestDir, reuseValid) {
+	const carryOver = /* @__PURE__ */ new Map();
+	const pending = [];
+	if (!previous) return {
+		pending: [...selected],
+		carryOver
+	};
+	const byNumber = new Map(previous.cases.map((record) => [record.caseNumber, record]));
+	const selectedNumbers = new Set(selected.map((item) => item.caseNumber));
+	for (const item of selected) {
+		const record = byNumber.get(item.caseNumber);
+		if (reuseValid && record && record.status === "success" && record.seed === item.seed && await fileMatches(record.input, manifestDir) && await fileMatches(record.output, manifestDir)) {
+			carryOver.set(item.caseNumber, record);
+			continue;
+		}
+		pending.push(item);
+	}
+	for (const item of allCases) {
+		if (selectedNumbers.has(item.caseNumber)) continue;
+		const record = byNumber.get(item.caseNumber);
+		if (record) carryOver.set(item.caseNumber, record);
+	}
+	return {
+		pending,
+		carryOver
+	};
+}
+async function fileMatches(ref, baseDir) {
+	if (!ref) return false;
+	const absolutePath = node_path.default.isAbsolute(ref.path) ? ref.path : node_path.default.resolve(baseDir, ref.path);
+	try {
+		const digest = await digestFile(absolutePath);
+		return digest.sha256 === ref.sha256 && digest.bytes === ref.bytes;
+	} catch {
+		return false;
+	}
+}
+function mergeCaseRecords(cases, reused, fresh) {
+	const freshByNumber = new Map(fresh.map((record) => [record.caseNumber, record]));
+	return cases.map((item) => freshByNumber.get(item.caseNumber) ?? reused.get(item.caseNumber) ?? null).filter((record) => record !== null);
+}
+/** Delete numbered `.in` / `.out` files that no declared case owns any more. */
+async function pruneOrphanArtifacts(outputDir, declared) {
+	let entries;
+	try {
+		entries = await node_fs_promises.default.readdir(outputDir);
+	} catch {
+		return 0;
+	}
+	let removed = 0;
+	for (const name of entries) {
+		const match = /^(\d+)\.(?:in|out)$/.exec(name);
+		if (!match) continue;
+		if (declared.has(Number(match[1]))) continue;
+		await node_fs_promises.default.rm(node_path.default.join(outputDir, name), { force: true });
+		removed++;
+	}
+	return removed;
+}
+function assertDataset(dataset) {
+	if (!dataset || typeof dataset !== "object" || dataset.__genesisDataset !== 2) throw new Error("Invalid Genesis v2 dataset object.");
+}
+/**
+* Resolve a dataset's config the same way a run would, without touching any file.
+* Shared with `checkDataset` so both agree on where the output and manifest live.
+*/
+function resolveDatasetConfig(dataset, options = {}) {
+	assertDataset(dataset);
+	return resolveConfigPaths(normalizeConfig({
 		...dataset.config,
 		outputDir: options.outputDir ?? dataset.config.outputDir,
 		manifestPath: options.manifestPath ?? dataset.config.manifestPath
 	}), options.datasetFile);
-	const cases = expandDatasetCases(config);
-	if (cases.length === 0) throw new Error("Dataset contains no cases.");
-	const startedAt = Date.now();
-	const { results, execution } = await runCasePipeline(config, cases, options.mode, {
-		cleanOutputDir: options.cleanOutputDir,
-		outputDir: config.outputDir,
-		rootDir
-	});
-	const summary = summarize(results, Date.now() - startedAt);
-	return {
-		manifest: options.mode === "generate" ? await writeManifest(config, results, summary, {
-			datasetFile: options.datasetFile ?? null,
-			execution,
-			replay: options.replay ?? null
-		}) : null,
-		results,
-		summary
-	};
-}
-function assertDataset(dataset) {
-	if (!dataset || typeof dataset !== "object" || dataset.__genesisDataset !== 2) throw new Error("Invalid Genesis v2 dataset object.");
 }
 function normalizeConfig(config) {
 	if (!config || typeof config !== "object") throw new Error("Dataset config is missing.");
@@ -1805,7 +2385,7 @@ async function runCasePipeline(config, cases, mode, options = {}) {
 	let nextIndex = 0;
 	const running = /* @__PURE__ */ new Set();
 	const launch = (index) => {
-		const task = processCase(config, cases[index], mode, preparedExecution, outputDir).then((result) => {
+		const task = processCase(config, cases[index], mode, preparedExecution, outputDir, options).then((result) => {
 			results[index] = result;
 		}).finally(() => {
 			running.delete(task);
@@ -1824,7 +2404,7 @@ async function runCasePipeline(config, cases, mode, options = {}) {
 		execution: preparedExecution
 	};
 }
-async function processCase(config, entry, mode, execution, outputDir) {
+async function processCase(config, entry, mode, execution, outputDir, options = {}) {
 	const startedAt = Date.now();
 	const phases = {
 		materializeMs: 0,
@@ -1848,7 +2428,7 @@ async function processCase(config, entry, mode, execution, outputDir) {
 		phases.materializeMs = Date.now() - materializeStarted;
 		currentPhase = "format";
 		const formatStarted = Date.now();
-		const renderedInput = renderFormatDocument(normalizeFormat(config.format(input)));
+		const renderedInput = applyTrailingNewline(renderFormatDocument(normalizeFormat(config.format(input))), options.ensureTrailingNewline);
 		phases.formatMs = Date.now() - formatStarted;
 		currentPhase = "validate";
 		const validationStarted = Date.now();
@@ -1881,7 +2461,7 @@ async function processCase(config, entry, mode, execution, outputDir) {
 		phases.executionMs = Date.now() - executionStarted;
 		currentPhase = "write-output";
 		const writeOutputStarted = Date.now();
-		outputRecord = await describeFile(outPath);
+		outputRecord = await describeFile$1(outPath);
 		phases.writeOutputMs = Date.now() - writeOutputStarted;
 		return {
 			caseId: entry.caseNumber,
@@ -1913,12 +2493,25 @@ function buildGenerateContext(entry) {
 	};
 }
 async function runValidation(config, input, context) {
-	if (!config.validate) return {
+	const hasConstraints = Boolean(config.constraints && Object.keys(config.constraints).length > 0);
+	if (!config.validate && !hasConstraints) return {
 		status: "not-run",
 		durationMs: 0
 	};
 	const startedAt = Date.now();
 	try {
+		if (hasConstraints) {
+			const violation = checkConstraints(input, config.constraints);
+			if (violation) return {
+				status: "failed",
+				durationMs: Date.now() - startedAt,
+				reason: violation
+			};
+		}
+		if (!config.validate) return {
+			status: "passed",
+			durationMs: Date.now() - startedAt
+		};
 		const normalized = normalizeValidationResult(await config.validate(input, context));
 		normalized.durationMs = Date.now() - startedAt;
 		return normalized;
@@ -2052,65 +2645,18 @@ function summarize(results, durationMs) {
 		durationMs
 	};
 }
-async function writeManifest(config, results, summary, context = {}) {
-	const manifestPath = resolveManifestPath(config);
-	if (!manifestPath) return null;
-	const manifest = {
-		version: 2,
-		tool: {
-			name: "genesis-kit",
-			version
-		},
-		generatedAt: (/* @__PURE__ */ new Date()).toISOString(),
-		dataset: {
-			modulePath: context.datasetFile ? toProjectRelativePosix(node_path.default.resolve(context.datasetFile)) : null,
-			solution: toProjectRelativePosix(node_path.default.resolve(config.solution)),
-			outputDir: toProjectRelativePosix(node_path.default.resolve(config.outputDir ?? "data")),
-			seed: String(config.seed),
-			startFrom: config.startFrom ?? 1,
-			runTimeoutMs: config.runTimeoutMs ?? 1e4,
-			caseConcurrency: config.caseConcurrency ?? null,
-			compiler: config.compiler ?? null,
-			compilerFlags: [...config.compilerFlags ?? []],
-			ojProfile: config.ojProfile ?? null,
-			stackSizeBytes: config.stackSizeBytes ?? null,
-			manifestPath: manifestPath ? toProjectRelativePosix(manifestPath) : null
-		},
-		execution: context.execution ? {
-			runArgs: [...context.execution.runArgs],
-			executablePath: context.execution.executablePath,
-			fingerprint: buildExecutionFingerprint(context.execution)
-		} : null,
-		replay: context.replay ?? null,
-		summary,
-		cases: results
+function applyTrailingNewline(text, enabled) {
+	if (!enabled || text.length === 0 || text.endsWith("\n")) return text;
+	return `${text}\n`;
+}
+function buildExecutedSummary(allResults, executedResults) {
+	const succeeded = executedResults.filter((result) => result.status === "success").length;
+	return {
+		totalCases: executedResults.length,
+		succeeded,
+		failed: executedResults.length - succeeded,
+		skipped: allResults.length - executedResults.length
 	};
-	await node_fs_promises.default.mkdir(node_path.default.dirname(manifestPath), { recursive: true });
-	await node_fs_promises.default.writeFile(manifestPath, JSON.stringify(manifest, null, 2) + "\n", "utf8");
-	return manifest;
-}
-function buildExecutionFingerprint(execution) {
-	return node_crypto.default.createHash("sha256").update(JSON.stringify({
-		runArgs: execution.runArgs,
-		executablePath: execution.executablePath
-	})).digest("hex");
-}
-function resolveManifestPath(config) {
-	if (config.manifestPath === false) return null;
-	if (typeof config.manifestPath === "string") return node_path.default.resolve(config.manifestPath);
-	const outputDir = node_path.default.resolve(config.outputDir ?? "data");
-	const parentDir = node_path.default.dirname(outputDir);
-	const name = node_path.default.basename(outputDir) || "data";
-	return node_path.default.join(parentDir, `${name}.manifest.json`);
-}
-function toPortablePath(filePath) {
-	return filePath.split(node_path.default.sep).join(node_path.default.posix.sep).replaceAll(node_path.default.win32.sep, node_path.default.posix.sep);
-}
-function toProjectRelativePosix(filePath) {
-	const absolutePath = node_path.default.resolve(filePath);
-	const relativePath = node_path.default.relative(process.cwd(), absolutePath);
-	if (relativePath && !relativePath.startsWith("..") && !node_path.default.isAbsolute(relativePath)) return toPortablePath(relativePath);
-	return toPortablePath(absolutePath);
 }
 function getDatasetRootDir(datasetFile) {
 	return datasetFile ? node_path.default.dirname(node_path.default.resolve(datasetFile)) : process.cwd();
@@ -2159,26 +2705,15 @@ async function runSolution(execution, input, timeoutMs, outputPath) {
 async function writeTextFile(filePath, text) {
 	await node_fs_promises.default.mkdir(node_path.default.dirname(filePath), { recursive: true });
 	await node_fs_promises.default.writeFile(filePath, text, "utf8");
-	return describeFile(filePath);
+	return describeFile$1(filePath);
 }
-async function describeFile(filePath) {
-	const stat = await node_fs_promises.default.stat(filePath);
-	const sha256 = node_crypto.default.createHash("sha256");
-	let newlineCount = 0;
-	await new Promise((resolve, reject) => {
-		const stream = (0, node_fs.createReadStream)(filePath);
-		stream.on("data", (chunk$1) => {
-			sha256.update(chunk$1);
-			for (const byte of chunk$1) if (byte === 10) newlineCount++;
-		});
-		stream.once("error", reject);
-		stream.once("end", () => resolve());
-	});
+async function describeFile$1(filePath) {
+	const digest = await digestFile(filePath);
 	return {
-		path: toProjectRelativePosix(filePath),
-		sha256: sha256.digest("hex"),
-		bytes: stat.size,
-		lines: stat.size === 0 ? 0 : newlineCount + 1
+		path: node_path.default.resolve(filePath),
+		sha256: digest.sha256,
+		bytes: digest.bytes,
+		lines: digest.lines
 	};
 }
 async function resetOutputDirectory(outputDir, rootDir) {
@@ -2210,6 +2745,199 @@ function getErrorMessage(error) {
 }
 
 //#endregion
+//#region src/check.ts
+/**
+* Compare the dataset's *intent* (its config plus the bytes of `maker` / `std`) against the
+* artifacts currently on disk. Reads only — never generates, never writes.
+*
+* This is what makes `--check` cheap: without it the only way to know whether a change to
+* `maker.ts` invalidated 2 GB of test data is to regenerate all of it.
+*/
+async function checkDataset(dataset, options = {}) {
+	const config = resolveDatasetConfig(dataset, options);
+	const cases = expandDatasetCases(config);
+	const expectedNumbers = cases.map((item) => item.caseNumber);
+	const manifestPath = defaultManifestPath(config);
+	if (!manifestPath) return {
+		status: "missing",
+		manifestPath: null,
+		manifestVersion: null,
+		expectedCases: cases.length,
+		recordedCases: 0,
+		missingCases: expectedNumbers,
+		issues: [{
+			code: "manifest-missing",
+			severity: "error",
+			message: "This dataset has no manifest (manifestPath is false), so drift cannot be verified."
+		}]
+	};
+	let loaded = null;
+	try {
+		loaded = await readManifest(manifestPath);
+	} catch {
+		loaded = null;
+	}
+	if (!loaded) return {
+		status: "missing",
+		manifestPath,
+		manifestVersion: null,
+		expectedCases: cases.length,
+		recordedCases: 0,
+		missingCases: expectedNumbers,
+		issues: [{
+			code: "manifest-missing",
+			severity: "error",
+			message: `No manifest at ${manifestPath}.`
+		}]
+	};
+	const { manifest, manifestDir } = loaded;
+	const issues = [];
+	if (manifest.version !== MANIFEST_VERSION) issues.push({
+		code: "manifest-version",
+		severity: "error",
+		message: `Manifest is v${manifest.version}, this tool writes v${MANIFEST_VERSION}. Regenerate or migrate it.`
+	});
+	issues.push(...await compareSource("maker", manifest, options.datasetFile ?? null, manifestDir));
+	issues.push(...await compareSource("solution", manifest, config.solution, manifestDir));
+	const recordedNumbers = new Set(manifest.cases.map((record) => record.caseNumber));
+	const missingCases = expectedNumbers.filter((number) => !recordedNumbers.has(number));
+	const extraCases = [...recordedNumbers].filter((number) => !expectedNumbers.includes(number));
+	for (const number of missingCases) {
+		const entry = cases.find((item) => item.caseNumber === number);
+		issues.push({
+			code: "case-missing",
+			severity: "error",
+			message: `case ${number} (${entry?.name ?? "?"}) is declared but missing from the manifest.`,
+			caseNumber: number
+		});
+	}
+	for (const number of extraCases) issues.push({
+		code: "case-extra",
+		severity: "error",
+		message: `case ${number} exists in the manifest but is no longer declared.`,
+		caseNumber: number
+	});
+	for (const record of manifest.cases) {
+		if (record.status !== "success") {
+			issues.push({
+				code: "case-failed",
+				severity: "error",
+				message: `case ${record.caseNumber} was recorded as failed: ${record.error?.message ?? "unknown error"}`,
+				caseNumber: record.caseNumber
+			});
+			continue;
+		}
+		issues.push(...await compareArtifact(record.input, "input", record.caseNumber, manifestDir));
+		issues.push(...await compareArtifact(record.output, "output", record.caseNumber, manifestDir));
+	}
+	issues.push(...await findOrphans(config.outputDir ?? "data", new Set(expectedNumbers), manifestDir));
+	return {
+		status: issues.some((issue) => issue.severity === "error") ? "stale" : "ok",
+		manifestPath,
+		manifestVersion: manifest.version,
+		expectedCases: cases.length,
+		recordedCases: manifest.cases.length,
+		missingCases,
+		issues
+	};
+}
+async function checkDatasetFromFile(entryFile = "make.ts", options = {}) {
+	return checkDataset(await loadDatasetFromFile(entryFile), {
+		...options,
+		datasetFile: node_path.default.resolve(entryFile)
+	});
+}
+async function compareSource(kind, manifest, absolutePath, manifestDir) {
+	const recorded = kind === "maker" ? manifest.sources?.maker : manifest.sources?.solution;
+	if (!absolutePath) return kind === "maker" ? [] : [{
+		code: "source-drift",
+		severity: "error",
+		message: "The dataset has no solution file to fingerprint."
+	}];
+	const label = kind === "maker" ? "maker module" : "standard solution";
+	if (!recorded) return [{
+		code: "source-drift",
+		severity: "error",
+		message: `The manifest records no ${label} fingerprint, so staleness cannot be verified.`,
+		path: relativizePath(absolutePath, manifestDir)
+	}];
+	try {
+		const digest = await digestFile(absolutePath);
+		if (digest.sha256 !== recorded.sha256) return [{
+			code: "source-drift",
+			severity: "error",
+			message: `${label} changed since the data was generated (${recorded.sha256.slice(0, 8)} -> ${digest.sha256.slice(0, 8)}).`,
+			path: recorded.path
+		}];
+	} catch {
+		return [{
+			code: "source-drift",
+			severity: "error",
+			message: `${label} is missing: ${absolutePath}`,
+			path: recorded.path
+		}];
+	}
+	return [];
+}
+async function compareArtifact(ref, label, caseNumber, manifestDir) {
+	if (!ref) return [{
+		code: "artifact-missing",
+		severity: "error",
+		message: `case ${caseNumber} has no recorded ${label} file.`,
+		caseNumber
+	}];
+	const absolutePath = node_path.default.isAbsolute(ref.path) ? ref.path : node_path.default.resolve(manifestDir, ref.path);
+	try {
+		const digest = await digestFile(absolutePath);
+		if (digest.sha256 !== ref.sha256) return [{
+			code: "artifact-modified",
+			severity: "error",
+			message: `case ${caseNumber} ${label} differs from the manifest (${ref.sha256.slice(0, 8)} -> ${digest.sha256.slice(0, 8)}).`,
+			caseNumber,
+			path: ref.path
+		}];
+	} catch {
+		return [{
+			code: "artifact-missing",
+			severity: "error",
+			message: `case ${caseNumber} ${label} file is missing: ${ref.path}`,
+			caseNumber,
+			path: ref.path
+		}];
+	}
+	return [];
+}
+/**
+* Numbered `.in` / `.out` files that no declared case owns.
+*
+* These are left behind when a dataset shrinks — `promoteArtifacts()` only ever overwrites,
+* so dropping cases 9-12 leaves `9.in`..`12.in` on disk and the catalog happily indexes them.
+*/
+async function findOrphans(outputDir, declared, manifestDir) {
+	let entries;
+	try {
+		entries = await node_fs_promises.default.readdir(node_path.default.resolve(outputDir));
+	} catch {
+		return [];
+	}
+	const issues = [];
+	for (const name of entries.sort()) {
+		const match = /^(\d+)\.(in|out)$/.exec(name);
+		if (!match) continue;
+		const number = Number(match[1]);
+		if (declared.has(number)) continue;
+		issues.push({
+			code: "orphan-artifact",
+			severity: "warning",
+			message: `orphan file ${name} does not belong to any declared case (run with --prune to remove).`,
+			caseNumber: number,
+			path: relativizePath(node_path.default.resolve(outputDir, name), manifestDir)
+		});
+	}
+	return issues;
+}
+
+//#endregion
 //#region src/ai-contract.generated.ts
 const AI_CONTRACT_GENERATED = {
 	"headerDeclarations": [
@@ -2229,23 +2957,18 @@ const AI_CONTRACT_GENERATED = {
 			"name": "DebugOptions",
 			"declarationLines": [
 				"export interface DebugOptions {",
-				"    separator?: string;",
-				"    printDims?: boolean;",
-				"    printType?: boolean;",
-				"    printStats?: boolean;",
-				"    truncate?: number;",
-				"    colors?: boolean;",
+				"  separator?: string;",
+				"  printDims?: boolean;",
+				"  printType?: boolean;",
+				"  printStats?: boolean;",
+				"  truncate?: number;",
+				"  colors?: boolean;",
 				"}"
 			]
 		},
 		{
 			"name": "WeightOption",
-			"declarationLines": [
-				"export type WeightOption = boolean | [",
-				"    min: number,",
-				"    max: number",
-				"];"
-			]
+			"declarationLines": ["export type WeightOption = boolean | [min: number, max: number];"]
 		},
 		{
 			"name": "GraphType",
@@ -2255,13 +2978,13 @@ const AI_CONTRACT_GENERATED = {
 			"name": "GraphOptions",
 			"declarationLines": [
 				"export interface GraphOptions {",
-				"    type?: GraphType;",
-				"    directed?: boolean;",
-				"    weighted?: WeightOption;",
-				"    connected?: boolean;",
-				"    noSelfLoops?: boolean;",
-				"    oneBased?: boolean;",
-				"    negativeCycle?: boolean;",
+				"  type?: GraphType;",
+				"  directed?: boolean;",
+				"  weighted?: WeightOption;",
+				"  connected?: boolean;",
+				"  noSelfLoops?: boolean;",
+				"  oneBased?: boolean;",
+				"  negativeCycle?: boolean;",
 				"}"
 			]
 		},
@@ -2273,9 +2996,9 @@ const AI_CONTRACT_GENERATED = {
 			"name": "TreeOptions",
 			"declarationLines": [
 				"export interface TreeOptions {",
-				"    type?: TreeType;",
-				"    weighted?: WeightOption;",
-				"    oneBased?: boolean;",
+				"  type?: TreeType;",
+				"  weighted?: WeightOption;",
+				"  oneBased?: boolean;",
 				"}"
 			]
 		},
@@ -2287,35 +3010,19 @@ const AI_CONTRACT_GENERATED = {
 			"name": "BinaryTreeOptions",
 			"declarationLines": [
 				"export interface BinaryTreeOptions {",
-				"    type?: BinaryTreeType;",
-				"    oneBased?: boolean;",
+				"  type?: BinaryTreeType;",
+				"  oneBased?: boolean;",
 				"}"
 			]
 		},
 		{
 			"name": "SequenceOptions",
 			"declarationLines": [
-				"export type SequenceOptions = {",
-				"    type: 'arithmetic';",
-				"    start: number;",
-				"    diff: number;",
-				"    count: number;",
-				"} | {",
-				"    type: 'geometric';",
-				"    start: number;",
-				"    ratio: number;",
-				"    count: number;",
-				"} | {",
-				"    type: 'fibonacci';",
-				"    count: number;",
-				"    first?: number;",
-				"    second?: number;",
-				"} | {",
-				"    type: 'custom';",
-				"    init: number[];",
-				"    fn: (prev: number[]) => number;",
-				"    count: number;",
-				"};"
+				"export type SequenceOptions =",
+				"    | { type: 'arithmetic'; start: number; diff: number; count: number }",
+				"    | { type: 'geometric'; start: number; ratio: number; count: number }",
+				"    | { type: 'fibonacci'; count: number; first?: number; second?: number }",
+				"    | { type: 'custom'; init: number[]; fn: (prev: number[]) => number; count: number };"
 			]
 		},
 		{
@@ -2326,8 +3033,10 @@ const AI_CONTRACT_GENERATED = {
 			"name": "FormatLine",
 			"declarationLines": [
 				"export interface FormatLine {",
-				"    readonly kind: 'line';",
-				"    readonly items: readonly FormatAtom[];",
+				"  readonly kind: 'line';",
+				"  readonly items: readonly FormatAtom[];",
+				"",
+				"  readonly sep?: string;",
 				"}"
 			]
 		},
@@ -2335,8 +3044,12 @@ const AI_CONTRACT_GENERATED = {
 			"name": "FormatTable",
 			"declarationLines": [
 				"export interface FormatTable {",
-				"    readonly kind: 'table';",
-				"    readonly rows: readonly (readonly FormatAtom[])[];",
+				"  readonly kind: 'table';",
+				"  readonly rows: readonly (readonly FormatAtom[])[];",
+				"",
+				"  readonly sep?: string;",
+				"",
+				"  readonly rowSep?: string;",
 				"}"
 			]
 		},
@@ -2344,8 +3057,8 @@ const AI_CONTRACT_GENERATED = {
 			"name": "FormatGrid",
 			"declarationLines": [
 				"export interface FormatGrid {",
-				"    readonly kind: 'grid';",
-				"    readonly rows: readonly (string | readonly FormatAtom[])[];",
+				"  readonly kind: 'grid';",
+				"  readonly rows: readonly (string | readonly FormatAtom[])[];",
 				"}"
 			]
 		},
@@ -2353,23 +3066,77 @@ const AI_CONTRACT_GENERATED = {
 			"name": "FormatRaw",
 			"declarationLines": [
 				"export interface FormatRaw {",
-				"    readonly kind: 'raw';",
-				"    readonly text: string;",
+				"  readonly kind: 'raw';",
+				"  readonly text: string;",
+				"}"
+			]
+		},
+		{
+			"name": "FormatSeq",
+			"declarationLines": [
+				"export interface FormatSeq {",
+				"  readonly kind: 'seq';",
+				"  readonly nodes: readonly FormatNode[];",
+				"  readonly sep: string;",
 				"}"
 			]
 		},
 		{
 			"name": "FormatNode",
-			"declarationLines": ["export type FormatNode = FormatLine | FormatTable | FormatGrid | FormatRaw;"]
+			"declarationLines": ["export type FormatNode = FormatLine | FormatTable | FormatGrid | FormatRaw | FormatSeq;"]
 		},
 		{
 			"name": "FormatDocument",
 			"declarationLines": [
 				"export interface FormatDocument {",
-				"    readonly __genesisFormat: 2;",
-				"    readonly nodes: readonly FormatNode[];",
+				"  readonly __genesisFormat: 2;",
+				"  readonly nodes: readonly FormatNode[];",
 				"}"
 			]
+		},
+		{
+			"name": "FormatTableOptions",
+			"declarationLines": [
+				"export interface FormatTableOptions {",
+				"  sep?: string;",
+				"  rowSep?: string;",
+				"}"
+			]
+		},
+		{
+			"name": "FormatRowsOptions",
+			"declarationLines": [
+				"export interface FormatRowsOptions extends FormatTableOptions {",
+				"",
+				"  header?: readonly FormatAtom[];",
+				"}"
+			]
+		},
+		{
+			"name": "FieldConstraint",
+			"declarationLines": [
+				"export interface FieldConstraint {",
+				"",
+				"  int?: boolean;",
+				"  min?: number;",
+				"  max?: number;",
+				"",
+				"  ref?: string;",
+				"",
+				"  eq?: number | string;",
+				"",
+				"  len?: number | string;",
+				"",
+				"  minLen?: number | string;",
+				"",
+				"  maxLen?: number | string;",
+				"  oneOf?: readonly (string | number)[];",
+				"}"
+			]
+		},
+		{
+			"name": "DatasetConstraints",
+			"declarationLines": ["export type DatasetConstraints = Record<string, FieldConstraint>;"]
 		}
 	],
 	"datasetDeclarations": [
@@ -2377,12 +3144,12 @@ const AI_CONTRACT_GENERATED = {
 			"name": "DatasetGenerateContext",
 			"declarationLines": [
 				"export interface DatasetGenerateContext {",
-				"    caseIndex: number;",
-				"    caseNumber: number;",
-				"    caseName: string;",
-				"    repeatIndex: number;",
-				"    seed: string;",
-				"    g: DatasetGenerator;",
+				"  caseIndex: number;",
+				"  caseNumber: number;",
+				"  caseName: string;",
+				"  repeatIndex: number;",
+				"  seed: string;",
+				"  g: DatasetGenerator;",
 				"}"
 			]
 		},
@@ -2390,13 +3157,13 @@ const AI_CONTRACT_GENERATED = {
 			"name": "DatasetValidationContext",
 			"declarationLines": [
 				"export interface DatasetValidationContext {",
-				"    caseIndex: number;",
-				"    caseNumber: number;",
-				"    caseName: string;",
-				"    repeatIndex: number;",
-				"    tags: string[];",
-				"    seed: string;",
-				"    formattedInput: string;",
+				"  caseIndex: number;",
+				"  caseNumber: number;",
+				"  caseName: string;",
+				"  repeatIndex: number;",
+				"  tags: string[];",
+				"  seed: string;",
+				"  formattedInput: string;",
 				"}"
 			]
 		},
@@ -2404,24 +3171,30 @@ const AI_CONTRACT_GENERATED = {
 			"name": "DatasetValidationResult",
 			"declarationLines": [
 				"export interface DatasetValidationResult {",
-				"    ok: boolean;",
-				"    reason?: string;",
+				"  ok: boolean;",
+				"  reason?: string;",
 				"}"
 			]
 		},
 		{
 			"name": "DatasetValidationReturn",
-			"declarationLines": ["export type DatasetValidationReturn = void | boolean | string | DatasetValidationResult;"]
+			"declarationLines": [
+				"export type DatasetValidationReturn =",
+				"  | void",
+				"  | boolean",
+				"  | string",
+				"  | DatasetValidationResult;"
+			]
 		},
 		{
 			"name": "DatasetStaticCase",
 			"declarationLines": [
 				"export interface DatasetStaticCase<TInput> {",
-				"    name: string;",
-				"    tags?: string[];",
-				"    input: TInput;",
-				"    generate?: never;",
-				"    repeat?: never;",
+				"  name: string;",
+				"  tags?: string[];",
+				"  input: TInput;",
+				"  generate?: never;",
+				"  repeat?: never;",
 				"}"
 			]
 		},
@@ -2429,11 +3202,11 @@ const AI_CONTRACT_GENERATED = {
 			"name": "DatasetGeneratedCase",
 			"declarationLines": [
 				"export interface DatasetGeneratedCase<TInput> {",
-				"    name: string;",
-				"    tags?: string[];",
-				"    repeat?: number;",
-				"    generate(ctx: DatasetGenerateContext): MaybePromise<TInput>;",
-				"    input?: never;",
+				"  name: string;",
+				"  tags?: string[];",
+				"  repeat?: number;",
+				"  generate(ctx: DatasetGenerateContext): MaybePromise<TInput>;",
+				"  input?: never;",
 				"}"
 			]
 		},
@@ -2445,20 +3218,25 @@ const AI_CONTRACT_GENERATED = {
 			"name": "DatasetConfig",
 			"declarationLines": [
 				"export interface DatasetConfig<TInput> {",
-				"    solution: string;",
-				"    outputDir?: string;",
-				"    seed: SeedInput;",
-				"    startFrom?: number;",
-				"    runTimeoutMs?: number;",
-				"    caseConcurrency?: number;",
-				"    compiler?: string;",
-				"    compilerFlags?: string[];",
-				"    ojProfile?: OjProfile;",
-				"    stackSizeBytes?: number;",
-				"    manifestPath?: string | false;",
-				"    format(input: TInput): FormatDocument | FormatNode;",
-				"    validate?(input: TInput, context: DatasetValidationContext): MaybePromise<DatasetValidationReturn>;",
-				"    cases: DatasetCase<TInput>[];",
+				"  solution: string;",
+				"  outputDir?: string;",
+				"  seed: SeedInput;",
+				"  startFrom?: number;",
+				"  runTimeoutMs?: number;",
+				"  caseConcurrency?: number;",
+				"  compiler?: string;",
+				"  compilerFlags?: string[];",
+				"  ojProfile?: OjProfile;",
+				"  stackSizeBytes?: number;",
+				"  manifestPath?: string | false;",
+				"",
+				"  constraints?: DatasetConstraints;",
+				"  format(input: TInput): FormatDocument | FormatNode;",
+				"  validate?(",
+				"    input: TInput,",
+				"    context: DatasetValidationContext,",
+				"  ): MaybePromise<DatasetValidationReturn>;",
+				"  cases: DatasetCase<TInput>[];",
 				"}"
 			]
 		},
@@ -2466,14 +3244,21 @@ const AI_CONTRACT_GENERATED = {
 			"name": "Dataset",
 			"declarationLines": [
 				"export interface Dataset<TInput = unknown> {",
-				"    readonly __genesisDataset: 2;",
-				"    readonly config: DatasetConfig<TInput>;",
+				"  readonly __genesisDataset: 2;",
+				"  readonly config: DatasetConfig<TInput>;",
 				"}"
 			]
 		},
 		{
 			"name": "defineDataset",
-			"declarationLines": ["export function defineDataset<TInput>(config: DatasetConfig<TInput>): Dataset<TInput>;"]
+			"declarationLines": [
+				"export function defineDataset<TInput>(config: DatasetConfig<TInput>): Dataset<TInput> {",
+				"  return {",
+				"    __genesisDataset: 2,",
+				"    config,",
+				"  };",
+				"}"
+			]
 		}
 	],
 	"fmtMethods": [
@@ -2489,8 +3274,8 @@ const AI_CONTRACT_GENERATED = {
 		},
 		{
 			"name": "table",
-			"signature": "table(rows: readonly (readonly FormatAtom[])[]): FormatTable;",
-			"declarationLines": ["table(rows: readonly (readonly FormatAtom[])[]): FormatTable;"]
+			"signature": "table(rows: readonly (readonly FormatAtom[])[], options?: FormatTableOptions): FormatTable;",
+			"declarationLines": ["table(rows: readonly (readonly FormatAtom[])[], options?: FormatTableOptions): FormatTable;"]
 		},
 		{
 			"name": "grid",
@@ -2501,6 +3286,36 @@ const AI_CONTRACT_GENERATED = {
 			"name": "raw",
 			"signature": "raw(text: string): FormatRaw;",
 			"declarationLines": ["raw(text: string): FormatRaw;"]
+		},
+		{
+			"name": "join",
+			"signature": "join(sep: string, ...items: FormatAtom[]): FormatLine;",
+			"declarationLines": ["join(sep: string, ...items: FormatAtom[]): FormatLine;"]
+		},
+		{
+			"name": "flat",
+			"signature": "flat(values: readonly FormatAtom[]): FormatLine;",
+			"declarationLines": ["flat(values: readonly FormatAtom[]): FormatLine;"]
+		},
+		{
+			"name": "tuple",
+			"signature": "tuple(...items: FormatAtom[]): FormatLine;",
+			"declarationLines": ["tuple(...items: FormatAtom[]): FormatLine;"]
+		},
+		{
+			"name": "seq",
+			"signature": "seq(nodes: readonly FormatNode[], sep = '\\n'): FormatSeq;",
+			"declarationLines": ["seq(nodes: readonly FormatNode[], sep = '\\n'): FormatSeq;"]
+		},
+		{
+			"name": "block",
+			"signature": "block(...nodes: FormatNode[]): FormatSeq;",
+			"declarationLines": ["block(...nodes: FormatNode[]): FormatSeq;"]
+		},
+		{
+			"name": "rows",
+			"signature": "rows(rows: readonly (readonly FormatAtom[])[], options?: FormatRowsOptions): FormatNode;",
+			"declarationLines": ["rows(rows: readonly (readonly FormatAtom[])[], options?: FormatRowsOptions): FormatNode;"]
 		}
 	],
 	"generatorMethods": [
@@ -2541,13 +3356,8 @@ const AI_CONTRACT_GENERATED = {
 		},
 		{
 			"name": "coprime",
-			"signature": "coprime(min: number, max: number): [",
-			"declarationLines": [
-				"coprime(min: number, max: number): [",
-				"    number,",
-				"    number",
-				"];"
-			]
+			"signature": "coprime(min: number, max: number): [number, number];",
+			"declarationLines": ["coprime(min: number, max: number): [number, number];"]
 		},
 		{
 			"name": "divisible",
@@ -2581,12 +3391,8 @@ const AI_CONTRACT_GENERATED = {
 		},
 		{
 			"name": "brackets",
-			"signature": "brackets(n: number, options?: {",
-			"declarationLines": [
-				"brackets(n: number, options?: {",
-				"    types?: string;",
-				"}): string;"
-			]
+			"signature": "brackets(n: number, options?: { types?: string }): string;",
+			"declarationLines": ["brackets(n: number, options?: { types?: string }): string;"]
 		},
 		{
 			"name": "array",
@@ -2595,12 +3401,8 @@ const AI_CONTRACT_GENERATED = {
 		},
 		{
 			"name": "sorted",
-			"signature": "sorted(count: number, min: number, max: number, options?: {",
-			"declarationLines": [
-				"sorted(count: number, min: number, max: number, options?: {",
-				"    order?: 'asc' | 'desc' | 'strictlyAsc' | 'strictlyDesc';",
-				"}): number[];"
-			]
+			"signature": "sorted(count: number, min: number, max: number, options?: { order?: 'asc' | 'desc' | 'strictlyAsc' | 'strictlyDesc' }): number[];",
+			"declarationLines": ["sorted(count: number, min: number, max: number, options?: { order?: 'asc' | 'desc' | 'strictlyAsc' | 'strictlyDesc' }): number[];"]
 		},
 		{
 			"name": "sparse",
@@ -2609,12 +3411,8 @@ const AI_CONTRACT_GENERATED = {
 		},
 		{
 			"name": "partition",
-			"signature": "partition(count: number, sum: number, options?: {",
-			"declarationLines": [
-				"partition(count: number, sum: number, options?: {",
-				"    minVal?: number;",
-				"}): number[];"
-			]
+			"signature": "partition(count: number, sum: number, options?: { minVal?: number }): number[];",
+			"declarationLines": ["partition(count: number, sum: number, options?: { minVal?: number }): number[];"]
 		},
 		{
 			"name": "matrix",
@@ -2628,25 +3426,20 @@ const AI_CONTRACT_GENERATED = {
 		},
 		{
 			"name": "maze",
-			"signature": "maze(rows: number, cols: number, options?: {",
-			"declarationLines": [
-				"maze(rows: number, cols: number, options?: {",
-				"    wall?: string;",
-				"    road?: string;",
-				"}): string[][];"
-			]
+			"signature": "maze(rows: number, cols: number, options?: { wall?: string; road?: string }): string[][];",
+			"declarationLines": ["maze(rows: number, cols: number, options?: { wall?: string; road?: string }): string[][];"]
 		},
 		{
 			"name": "intervals",
 			"signature": "intervals(n: number, min: number, max: number, options?: {",
 			"declarationLines": [
 				"intervals(n: number, min: number, max: number, options?: {",
-				"    overlapping?: boolean;",
-				"    sorted?: boolean;",
-				"    minLen?: number;",
-				"    maxLen?: number;",
-				"    allowGaps?: boolean;",
-				"}): number[][];"
+				"        overlapping?: boolean;",
+				"        sorted?: boolean;",
+				"        minLen?: number;",
+				"        maxLen?: number;",
+				"        allowGaps?: boolean;",
+				"    }): number[][];"
 			]
 		},
 		{
@@ -2681,12 +3474,8 @@ const AI_CONTRACT_GENERATED = {
 		},
 		{
 			"name": "points",
-			"signature": "points(n: number, minVal: number, maxVal: number, options?: {",
-			"declarationLines": [
-				"points(n: number, minVal: number, maxVal: number, options?: {",
-				"    type?: 'random' | 'collinear';",
-				"}): number[][];"
-			]
+			"signature": "points(n: number, minVal: number, maxVal: number, options?: { type?: 'random' | 'collinear' }): number[][];",
+			"declarationLines": ["points(n: number, minVal: number, maxVal: number, options?: { type?: 'random' | 'collinear' }): number[][];"]
 		},
 		{
 			"name": "convexHull",
@@ -2700,13 +3489,8 @@ const AI_CONTRACT_GENERATED = {
 		},
 		{
 			"name": "binaryTree",
-			"signature": "binaryTree(n: number, options?: BinaryTreeOptions): {",
-			"declarationLines": [
-				"binaryTree(n: number, options?: BinaryTreeOptions): {",
-				"    edges: number[][];",
-				"    root: number;",
-				"};"
-			]
+			"signature": "binaryTree(n: number, options?: BinaryTreeOptions): { edges: number[][]; root: number };",
+			"declarationLines": ["binaryTree(n: number, options?: BinaryTreeOptions): { edges: number[][]; root: number };"]
 		},
 		{
 			"name": "isLeap",
@@ -2720,14 +3504,8 @@ const AI_CONTRACT_GENERATED = {
 		},
 		{
 			"name": "date",
-			"signature": "date(options?: {",
-			"declarationLines": [
-				"date(options?: {",
-				"    minYear?: number;",
-				"    maxYear?: number;",
-				"    format?: string;",
-				"}): string;"
-			]
+			"signature": "date(options?: { minYear?: number; maxYear?: number; format?: string }): string;",
+			"declarationLines": ["date(options?: { minYear?: number; maxYear?: number; format?: string }): string;"]
 		},
 		{
 			"name": "debug",
@@ -3039,17 +3817,439 @@ function isAiGeneratorMethodName(value) {
 }
 
 //#endregion
+//#region src/lint.ts
+/** The complete v2 contract surface — what a hand-written maker may use. */
+function defaultLintAllowance() {
+	return {
+		fmtMethods: Object.keys(AI_FMT_METHOD_SIGNATURES),
+		generatorMethods: Object.keys(AI_GENERATOR_METHOD_SIGNATURES),
+		baseMethods: Object.keys(AI_BASE_METHOD_SIGNATURES),
+		charsetProperties: Object.keys(AI_CHARSET_PROPERTIES),
+		generatorPropertyRoots: ["CHARSET", "base"]
+	};
+}
+function isNode(value) {
+	return Boolean(value) && typeof value === "object" && typeof value.type === "string";
+}
+/** Fields that either hold positions or would create cycles. */
+const SKIP_KEYS = new Set([
+	"type",
+	"start",
+	"end",
+	"loc",
+	"range",
+	"parent",
+	"decorators"
+]);
+function childrenOf(node) {
+	const children = [];
+	for (const key of Object.keys(node)) {
+		if (SKIP_KEYS.has(key)) continue;
+		const value = node[key];
+		if (Array.isArray(value)) {
+			for (const item of value) if (isNode(item)) children.push(item);
+		} else if (isNode(value)) children.push(value);
+	}
+	return children;
+}
+const ROLE_BY_KEY = {
+	format: "format",
+	validate: "validate",
+	generate: "generate",
+	constraints: "constraints"
+};
+function propertyKeyName(node) {
+	if (node.type !== "Property" && node.type !== "ObjectProperty") return null;
+	const key = node.key;
+	if (!isNode(key)) return null;
+	if (key.type === "Identifier") return String(key.name);
+	if (key.type === "Literal") return typeof key.value === "string" ? key.value : null;
+	return null;
+}
+function markRoles(node, roleByNode) {
+	if (node.type === "Property" || node.type === "ObjectProperty") {
+		const name = propertyKeyName(node);
+		const role = name ? ROLE_BY_KEY[name] : void 0;
+		const value = node.value;
+		if (role && isNode(value)) markSubtree(value, role, roleByNode);
+	}
+	for (const child of childrenOf(node)) markRoles(child, roleByNode);
+}
+function markSubtree(node, role, roleByNode) {
+	if (!roleByNode.has(node)) roleByNode.set(node, role);
+	for (const child of childrenOf(node)) markSubtree(child, role, roleByNode);
+}
+/** `a.b.c` → `['a', 'b', 'c']`, or `null` when the chain is not a plain identifier chain. */
+function memberChain(node) {
+	if (node.type === "Identifier") return [String(node.name)];
+	if (node.type !== "MemberExpression") return null;
+	if (node.computed) {
+		const property$1 = node.property;
+		if (!isNode(property$1) || property$1.type !== "Literal" || typeof property$1.value !== "string") return null;
+		const head$1 = memberChain(node.object);
+		return head$1 ? [...head$1, property$1.value] : null;
+	}
+	const head = memberChain(node.object);
+	if (!head) return null;
+	const property = node.property;
+	if (!isNode(property) || property.type !== "Identifier") return null;
+	return [...head, String(property.name)];
+}
+function lineStarts(code) {
+	const starts = [0];
+	for (let i = 0; i < code.length; i++) if (code.charCodeAt(i) === 10) starts.push(i + 1);
+	return starts;
+}
+function positionOf(starts, offset) {
+	let low = 0;
+	let high = starts.length - 1;
+	while (low < high) {
+		const mid = Math.ceil((low + high) / 2);
+		if (starts[mid] <= offset) low = mid;
+		else high = mid - 1;
+	}
+	return {
+		line: low + 1,
+		column: offset - starts[low] + 1
+	};
+}
+function lintMakerSource(code, options = {}) {
+	const filename = options.filename ?? "make.ts";
+	const parsed = (0, oxc_parser.parseSync)(filename, code);
+	const issues = [];
+	const starts = lineStarts(code);
+	const report = (issue, node) => {
+		const severity = issue.severity ?? "error";
+		if (node) {
+			const { line, column } = positionOf(starts, node.start);
+			issues.push({
+				...issue,
+				severity,
+				line,
+				column
+			});
+		} else issues.push({
+			...issue,
+			severity
+		});
+	};
+	for (const error of parsed.errors) {
+		const { line, column } = positionOf(starts, error.labels?.[0]?.start ?? 0);
+		report({
+			code: "syntax",
+			message: `Cannot parse ${filename}: ${error.message}`,
+			line,
+			column
+		});
+	}
+	if (parsed.errors.length > 0) return issues;
+	const allowance = defaultLintAllowance();
+	const allowedFmt = new Set(allowance.fmtMethods);
+	const allowedGen = new Set(allowance.generatorMethods);
+	const allowedBase = new Set(allowance.baseMethods);
+	const allowedCharset = new Set(allowance.charsetProperties);
+	const allowedRoots = new Set(allowance.generatorPropertyRoots);
+	const root = parsed.program;
+	const roleByNode = /* @__PURE__ */ new Map();
+	markRoles(root, roleByNode);
+	const declared = collectDeclaredNames(root);
+	let sawDefineDatasetImport = false;
+	let sawFmtImport = false;
+	let sawDefaultExport = false;
+	const visit = (node, role) => {
+		const currentRole = roleByNode.get(node) ?? role;
+		if (node.type === "ImportDeclaration") checkImport(node);
+		else if (node.type === "ExportDefaultDeclaration") {
+			sawDefaultExport = true;
+			const declaration = node.declaration;
+			if (!isNode(declaration) || declaration.type !== "CallExpression") report({
+				code: "dataset-shape",
+				message: "export default 必须是 defineDataset(...) 的调用结果。"
+			}, node);
+			else {
+				const chain = memberChain(declaration.callee);
+				if (!chain || chain.join(".") !== "defineDataset") report({
+					code: "dataset-shape",
+					message: "export default 必须直接调用 defineDataset(...)。"
+				}, declaration);
+				else checkDatasetLiteral(declaration);
+			}
+		} else if (node.type === "TaggedTemplateExpression") {
+			const chain = memberChain(node.tag);
+			if (chain && chain[0] === "fmt" && !declared.has("fmt")) report({
+				code: "legacy-fmt",
+				message: "不允许使用旧版 fmt 模板语法，请改用 fmt.line / fmt.rows。"
+			}, node);
+		} else if (node.type === "CallExpression") checkCall(node, currentRole);
+		else if (node.type === "Identifier") {
+			const name = String(node.name);
+			if (name === "Maker" || name === "Checker") report({
+				code: "legacy-api",
+				message: `不允许使用旧版 ${name} API。`
+			}, node);
+		}
+		for (const child of childrenOf(node)) visit(child, currentRole);
+	};
+	function checkImport(node) {
+		const source = node.source;
+		const sourceValue = isNode(source) && source.type === "Literal" ? source.value : null;
+		if (sourceValue !== "genesis-kit") {
+			report({
+				code: "import-rule",
+				message: `maker.ts 不允许导入除 'genesis-kit' 之外的模块（发现 '${String(sourceValue)}'）。`
+			}, node);
+			return;
+		}
+		const specifiers = Array.isArray(node.specifiers) ? node.specifiers : [];
+		for (const specifier of specifiers) {
+			if (!isNode(specifier)) continue;
+			const imported = specifier.imported;
+			const name = isNode(imported) ? String(imported.name ?? imported.value ?? "") : "";
+			if (name === "defineDataset") sawDefineDatasetImport = true;
+			if (name === "fmt") sawFmtImport = true;
+		}
+	}
+	function checkDatasetLiteral(call) {
+		const first = (Array.isArray(call.arguments) ? call.arguments : [])[0];
+		if (!isNode(first) || first.type !== "ObjectExpression") return;
+		const properties = Array.isArray(first.properties) ? first.properties : [];
+		const seen = /* @__PURE__ */ new Set();
+		for (const property of properties) {
+			if (!isNode(property)) continue;
+			const name = propertyKeyName(property);
+			if (!name) continue;
+			seen.add(name);
+			if (name === "solution" && options.expectedSolution) {
+				const value = property.value;
+				const literal = isNode(value) && value.type === "Literal" ? value.value : null;
+				if (typeof literal === "string" && literal !== options.expectedSolution) report({
+					code: "solution",
+					message: `solution 必须精确等于 '${options.expectedSolution}'（发现 '${literal}'）。`
+				}, value);
+			}
+		}
+		for (const required of [
+			"solution",
+			"seed",
+			"format",
+			"cases"
+		]) if (!seen.has(required)) report({
+			code: required === "cases" ? "cases" : required,
+			message: `defineDataset 缺少 ${required}。`
+		}, call);
+	}
+	function checkCall(node, role) {
+		const callee = node.callee;
+		if (!isNode(callee)) return;
+		if (callee.type === "Identifier" && String(callee.name) === "require") {
+			report({
+				code: "import-rule",
+				message: "maker.ts 不允许使用 require()。"
+			}, node);
+			return;
+		}
+		const chain = memberChain(callee);
+		if (!chain || chain.length < 2) return;
+		const [rootName, method, ...rest] = chain;
+		if (rootName === "fmt") {
+			if (declared.has("fmt")) return;
+			if (rest.length > 0) return;
+			if (!allowedFmt.has(method)) report({
+				code: "fmt-method",
+				message: `fmt.${method} 不在当前 Genesis AI 合约可用范围内。可用：${[...allowedFmt].map((name) => `fmt.${name}`).join(", ")}`
+			}, callee);
+			return;
+		}
+		if (rootName === "G") {
+			report({
+				code: "legacy-generator",
+				message: "maker.ts 不允许使用旧版全局 G API。"
+			}, callee);
+			return;
+		}
+		if (rootName !== "g") return;
+		if (role !== "generate") return;
+		if (declared.has("g")) return;
+		if (method === "base" && rest.length === 1) {
+			if (!allowedBase.has(rest[0])) report({
+				code: "base-method",
+				message: `g.base.${rest[0]} 不在当前 Genesis AI 合约可用范围内。`
+			}, callee);
+			return;
+		}
+		if (method === "CHARSET" && rest.length === 1) {
+			if (!allowedCharset.has(rest[0])) report({
+				code: "unsupported-charset",
+				message: `g.CHARSET.${rest[0]} 不在当前 Genesis AI 合约可用范围内。`
+			}, callee);
+			return;
+		}
+		if (rest.length > 0) return;
+		if (method === "pick") {
+			report({
+				code: "legacy-generator",
+				message: "g.pick 不可用，请改用 g.sample。"
+			}, callee);
+			return;
+		}
+		if (!allowedGen.has(method)) report({
+			code: "generator-method",
+			message: `g.${method} 不在当前 Genesis AI 合约可用范围内。可用：${[...allowedGen].map((name) => `g.${name}`).join(", ")}`
+		}, callee);
+	}
+	visit(root, "other");
+	if (!sawDefineDatasetImport || !sawFmtImport) report({
+		code: "import-rule",
+		message: `maker.ts 必须从 'genesis-kit' 导入 ${[sawDefineDatasetImport ? null : "defineDataset", sawFmtImport ? null : "fmt"].filter(Boolean).join(" 和 ")}。`
+	});
+	if (!sawDefaultExport) report({
+		code: "dataset-shape",
+		message: "maker.ts 必须 export default defineDataset(...)。"
+	});
+	for (const issue of findUnknownGeneratorRoots(root, roleByNode, allowedRoots)) report(issue.issue, issue.node);
+	return dedupe(issues);
+}
+function findUnknownGeneratorRoots(root, roleByNode, allowedRoots) {
+	const found = [];
+	const seen = /* @__PURE__ */ new Set();
+	const visit = (node, role) => {
+		const currentRole = roleByNode.get(node) ?? role;
+		if (node.type === "MemberExpression" && currentRole === "generate") {
+			const chain = memberChain(node);
+			if (chain && chain.length >= 3 && chain[0] === "g" && !allowedRoots.has(chain[1])) {
+				const key = chain.slice(0, 2).join(".");
+				if (!seen.has(key)) {
+					seen.add(key);
+					found.push({
+						issue: {
+							code: "unsupported-generator-root",
+							message: `g.${chain[1]} 不是生成器的合法属性根，只允许 g.base / g.CHARSET。`
+						},
+						node
+					});
+				}
+			}
+		}
+		for (const child of childrenOf(node)) visit(child, currentRole);
+	};
+	visit(root, "other");
+	return found;
+}
+/** Names the file declares itself. A parameter named `g` is the injection; a variable is not. */
+function collectDeclaredNames(root) {
+	const names = /* @__PURE__ */ new Set();
+	const addPattern = (pattern) => {
+		if (!isNode(pattern)) return;
+		if (pattern.type === "Identifier") {
+			names.add(String(pattern.name));
+			return;
+		}
+		if (pattern.type === "ObjectPattern" || pattern.type === "ArrayPattern") {
+			const properties = pattern.properties;
+			if (Array.isArray(properties)) for (const property of properties) {
+				if (!isNode(property)) continue;
+				addPattern(property.value ?? property.argument ?? property);
+			}
+		}
+	};
+	const visit = (node) => {
+		if (node.type === "VariableDeclarator") addPattern(node.id);
+		else if (node.type === "FunctionDeclaration" || node.type === "ClassDeclaration") {
+			if (isNode(node.id)) names.add(String(node.id.name));
+		}
+		for (const child of childrenOf(node)) visit(child);
+	};
+	visit(root);
+	return names;
+}
+function dedupe(issues) {
+	const seen = /* @__PURE__ */ new Set();
+	const result = [];
+	for (const issue of issues) {
+		const key = `${issue.code}|${issue.message}|${issue.line ?? ""}|${issue.column ?? ""}`;
+		if (seen.has(key)) continue;
+		seen.add(key);
+		result.push(issue);
+	}
+	return result;
+}
+/**
+* Runtime counterpart of the source lint: checks the object a `make.ts` actually produced.
+*
+* Source lint cannot see computed keys or values produced by helpers, so the loaded config
+* is verified too.
+*/
+function lintDatasetConfig(config, options = {}) {
+	const issues = [];
+	const has = (key) => Object.prototype.hasOwnProperty.call(config, key);
+	if (!has("solution")) issues.push({
+		code: "solution",
+		severity: "error",
+		message: "maker.ts 必须定义 solution。"
+	});
+	else if (options.expectedSolution && config.solution !== options.expectedSolution) issues.push({
+		code: "solution",
+		severity: "error",
+		message: `maker.ts 中的 solution 必须精确等于 '${options.expectedSolution}'。`
+	});
+	if (!has("seed")) issues.push({
+		code: "seed",
+		severity: "error",
+		message: "maker.ts 必须定义 seed。"
+	});
+	if (!has("format")) issues.push({
+		code: "format",
+		severity: "error",
+		message: "maker.ts 必须定义 format。"
+	});
+	if (!has("cases")) issues.push({
+		code: "cases",
+		severity: "error",
+		message: "maker.ts 必须定义 cases。"
+	});
+	else if (containsOwnKeyDeep(config.cases, "output")) issues.push({
+		code: "case-output",
+		severity: "error",
+		message: "cases 中禁止定义 output。"
+	});
+	return issues;
+}
+function containsOwnKeyDeep(value, key, seen = /* @__PURE__ */ new Set()) {
+	if (!value || typeof value !== "object") return false;
+	if (seen.has(value)) return false;
+	seen.add(value);
+	if (Array.isArray(value)) return value.some((item) => containsOwnKeyDeep(item, key, seen));
+	if (Object.prototype.hasOwnProperty.call(value, key)) return true;
+	return Object.values(value).some((child) => typeof child === "function" ? false : containsOwnKeyDeep(child, key, seen));
+}
+/** Pretty one-line rendering used by the CLI. */
+function formatLintIssue(issue, filename = "make.ts") {
+	return `${issue.line ? `${filename}:${issue.line}:${issue.column ?? 1}` : filename}  [${issue.code}] ${issue.message}`;
+}
+
+//#endregion
 exports.AI_BASE_METHOD_SIGNATURES = AI_BASE_METHOD_SIGNATURES;
 exports.AI_CHARSET_PROPERTIES = AI_CHARSET_PROPERTIES;
 exports.AI_FMT_METHOD_SIGNATURES = AI_FMT_METHOD_SIGNATURES;
 exports.AI_GENERATOR_METHOD_SIGNATURES = AI_GENERATOR_METHOD_SIGNATURES;
+exports.MANIFEST_PATH_BASE = MANIFEST_PATH_BASE;
+exports.MANIFEST_VERSION = MANIFEST_VERSION;
 exports.analyzeProblemStatement = analyzeProblemStatement;
+exports.buildExecutionFingerprint = buildExecutionFingerprint;
+exports.checkConstraints = checkConstraints;
+exports.checkDataset = checkDataset;
+exports.checkDatasetFromFile = checkDatasetFromFile;
 exports.createFormatDocument = createFormatDocument;
 exports.createGenerator = createGenerator;
 exports.createSeededRng = createSeededRng;
+exports.defaultLintAllowance = defaultLintAllowance;
+exports.defaultManifestPath = defaultManifestPath;
 exports.defineDataset = defineDataset;
+exports.describeFile = describeFile;
+exports.digestFile = digestFile;
 exports.expandDatasetCases = expandDatasetCases;
 exports.fmt = fmt;
+exports.formatLintIssue = formatLintIssue;
 exports.generateDataset = generateDataset;
 exports.generateDatasetFromFile = generateDatasetFromFile;
 exports.isAiFormatMethodName = isAiFormatMethodName;
@@ -3057,15 +4257,26 @@ exports.isAiGeneratorMethodName = isAiGeneratorMethodName;
 exports.isDataset = isDataset;
 exports.isFormatDocument = isFormatDocument;
 exports.isFormatNode = isFormatNode;
+exports.lintDatasetConfig = lintDatasetConfig;
+exports.lintMakerSource = lintMakerSource;
 exports.loadDatasetFromFile = loadDatasetFromFile;
 exports.normalizeFormat = normalizeFormat;
+exports.parseConstraintPath = parseConstraintPath;
+exports.readManifest = readManifest;
+exports.relativizePath = relativizePath;
 exports.renderAiGenesisContractDts = renderAiGenesisContractDts;
 exports.renderAiGenesisContractMarkdown = renderAiGenesisContractMarkdown;
 exports.renderFormatDocument = renderFormatDocument;
 exports.replayDataset = replayDataset;
 exports.replayDatasetFromFile = replayDatasetFromFile;
 exports.resolveAiContractAllowance = resolveAiContractAllowance;
+exports.resolveDatasetConfig = resolveDatasetConfig;
+exports.resolveManifestPath = resolveManifestPath;
 exports.selectAiContract = selectAiContract;
+exports.selectDatasetCases = selectDatasetCases;
+exports.sourceMatches = sourceMatches;
+exports.toPortablePath = toPortablePath;
 exports.validateDataset = validateDataset;
 exports.validateDatasetFromFile = validateDatasetFromFile;
+exports.writeManifest = writeManifest;
 //# sourceMappingURL=index.js.map

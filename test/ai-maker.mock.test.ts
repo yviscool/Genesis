@@ -108,7 +108,10 @@ describe('ai-maker mock regressions', () => {
         failed: 0,
       });
       expect(manifest.summary.totalCases).toBeGreaterThanOrEqual(6);
-      expect(manifest.dataset.solution).toContain(`${fixtureName}/std.js`);
+      // Paths are relative to the manifest, which lives beside the dataset.
+      expect(manifest.pathBase).toBe('manifest');
+      expect(manifest.dataset.solution).toBe('std.js');
+      expect(manifest.sources.solution.sha256).toMatch(/^[a-f0-9]{64}$/);
     });
   }
 

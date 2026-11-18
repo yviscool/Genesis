@@ -1,6 +1,6 @@
 {
   "name": "genesis-kit",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "description": "AI-first deterministic dataset generator for algorithm competitions.",
   "keywords": [
     "oi",
@@ -17,6 +17,10 @@
   ],
   "author": "YV",
   "license": "MIT",
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org",
+    "access": "public"
+  },
   "bugs": {
     "url": "https://github.com/yviscool/Genesis/issues"
   },
@@ -55,16 +59,16 @@
     "build": "bun run build.ts",
     "prepare": "bun run build",
     "build:ai-contract": "bun run scripts/build-ai-contract.ts",
+    "typecheck": "tsrs --noEmit",
+    "typecheck:fast": "tsrs --noEmit --fast",
     "release:check": "node scripts/release-check.mjs",
     "release": "bun run release:check && bun publish"
   },
   "devDependencies": {
     "@types/bun": "latest",
     "esbuild-fix-imports-plugin": "latest",
-    "tsdown": "^0.16.2"
-  },
-  "peerDependencies": {
-    "@typescript/native-preview": "^7.0.0-dev.20251228.1"
+    "tsdown": "^0.16.2",
+    "tsrs": "^0.25.0-ts7.1.0-beta"
   },
   "dependencies": {
     "cac": "^6.7.14",
@@ -72,6 +76,7 @@
     "es-toolkit": "^1.43.0",
     "execa": "^9.6.1",
     "ora": "^9.0.0",
+    "oxc-parser": "^0.159.0",
     "picocolors": "^1.1.1",
     "tsx": "^4.20.6"
   }

@@ -10,109 +10,138 @@ declare module 'genesis-kit' {
   export type MaybePromise<T> = T | Promise<T>;
 
   export interface DebugOptions {
-      separator?: string;
-      printDims?: boolean;
-      printType?: boolean;
-      printStats?: boolean;
-      truncate?: number;
-      colors?: boolean;
+    separator?: string;
+    printDims?: boolean;
+    printType?: boolean;
+    printStats?: boolean;
+    truncate?: number;
+    colors?: boolean;
   }
 
-  export type WeightOption = boolean | [
-      min: number,
-      max: number
-  ];
+  export type WeightOption = boolean | [min: number, max: number];
 
   export type GraphType = 'simple' | 'tree' | 'dag' | 'bipartite' | 'wheel' | 'complete';
 
   export interface GraphOptions {
-      type?: GraphType;
-      directed?: boolean;
-      weighted?: WeightOption;
-      connected?: boolean;
-      noSelfLoops?: boolean;
-      oneBased?: boolean;
-      negativeCycle?: boolean;
+    type?: GraphType;
+    directed?: boolean;
+    weighted?: WeightOption;
+    connected?: boolean;
+    noSelfLoops?: boolean;
+    oneBased?: boolean;
+    negativeCycle?: boolean;
   }
 
   export type TreeType = 'random' | 'path' | 'star';
 
   export interface TreeOptions {
-      type?: TreeType;
-      weighted?: WeightOption;
-      oneBased?: boolean;
+    type?: TreeType;
+    weighted?: WeightOption;
+    oneBased?: boolean;
   }
 
   export type BinaryTreeType = 'random' | 'complete' | 'skewed';
 
   export interface BinaryTreeOptions {
-      type?: BinaryTreeType;
-      oneBased?: boolean;
+    type?: BinaryTreeType;
+    oneBased?: boolean;
   }
 
-  export type SequenceOptions = {
-      type: 'arithmetic';
-      start: number;
-      diff: number;
-      count: number;
-  } | {
-      type: 'geometric';
-      start: number;
-      ratio: number;
-      count: number;
-  } | {
-      type: 'fibonacci';
-      count: number;
-      first?: number;
-      second?: number;
-  } | {
-      type: 'custom';
-      init: number[];
-      fn: (prev: number[]) => number;
-      count: number;
-  };
+  export type SequenceOptions =
+      | { type: 'arithmetic'; start: number; diff: number; count: number }
+      | { type: 'geometric'; start: number; ratio: number; count: number }
+      | { type: 'fibonacci'; count: number; first?: number; second?: number }
+      | { type: 'custom'; init: number[]; fn: (prev: number[]) => number; count: number };
 
   export type FormatAtom = string | number | bigint | boolean | null | undefined;
 
   export interface FormatLine {
-      readonly kind: 'line';
-      readonly items: readonly FormatAtom[];
+    readonly kind: 'line';
+    readonly items: readonly FormatAtom[];
+
+    readonly sep?: string;
   }
 
   export interface FormatTable {
-      readonly kind: 'table';
-      readonly rows: readonly (readonly FormatAtom[])[];
+    readonly kind: 'table';
+    readonly rows: readonly (readonly FormatAtom[])[];
+
+    readonly sep?: string;
+
+    readonly rowSep?: string;
   }
 
   export interface FormatGrid {
-      readonly kind: 'grid';
-      readonly rows: readonly (string | readonly FormatAtom[])[];
+    readonly kind: 'grid';
+    readonly rows: readonly (string | readonly FormatAtom[])[];
   }
 
   export interface FormatRaw {
-      readonly kind: 'raw';
-      readonly text: string;
+    readonly kind: 'raw';
+    readonly text: string;
   }
 
-  export type FormatNode = FormatLine | FormatTable | FormatGrid | FormatRaw;
+  export interface FormatSeq {
+    readonly kind: 'seq';
+    readonly nodes: readonly FormatNode[];
+    readonly sep: string;
+  }
+
+  export type FormatNode = FormatLine | FormatTable | FormatGrid | FormatRaw | FormatSeq;
 
   export interface FormatDocument {
-      readonly __genesisFormat: 2;
-      readonly nodes: readonly FormatNode[];
+    readonly __genesisFormat: 2;
+    readonly nodes: readonly FormatNode[];
   }
+
+  export interface FormatTableOptions {
+    sep?: string;
+    rowSep?: string;
+  }
+
+  export interface FormatRowsOptions extends FormatTableOptions {
+
+    header?: readonly FormatAtom[];
+  }
+
+  export interface FieldConstraint {
+
+    int?: boolean;
+    min?: number;
+    max?: number;
+
+    ref?: string;
+
+    eq?: number | string;
+
+    len?: number | string;
+
+    minLen?: number | string;
+
+    maxLen?: number | string;
+    oneOf?: readonly (string | number)[];
+  }
+
+  export type DatasetConstraints = Record<string, FieldConstraint>;
 
   export const fmt: {
     line(...items: FormatAtom[]): FormatLine;
     /** Multiple rows. Each item may be one atom, one atom array, or one fmt.* node. */
     /** Atom arrays become one space-separated line; nested fmt.* nodes are embedded verbatim. */
     lines(...rows: (FormatNode | readonly FormatAtom[] | FormatAtom)[]): FormatDocument;
-    table(rows: readonly (readonly FormatAtom[])[]): FormatTable;
+    table(rows: readonly (readonly FormatAtom[])[], options?: FormatTableOptions): FormatTable;
     /** Grid-style rows with no separator inside each row. */
     /** Use fmt.table(...) instead when row items should be separated by spaces. */
     grid(rows: readonly (string | readonly FormatAtom[])[]): FormatGrid;
     /** Raw text passthrough. */
     /** Text is emitted exactly as provided, including embedded newlines. */
     raw(text: string): FormatRaw;
+    join(sep: string, ...items: FormatAtom[]): FormatLine;
+    flat(values: readonly FormatAtom[]): FormatLine;
+    tuple(...items: FormatAtom[]): FormatLine;
+    seq(nodes: readonly FormatNode[], sep = '\n'): FormatSeq;
+    block(...nodes: FormatNode[]): FormatSeq;
+    rows(rows: readonly (readonly FormatAtom[])[], options?: FormatRowsOptions): FormatNode;
   };
 
   export interface DatasetGenerator {
@@ -131,37 +160,25 @@ declare module 'genesis-kit' {
     even(min: number, max: number): number;
     odd(min: number, max: number): number;
     prime(min: number, max: number): number;
-    coprime(min: number, max: number): [
-        number,
-        number
-    ];
+    coprime(min: number, max: number): [number, number];
     divisible(min: number, max: number, d: number): number;
     sequence(options: SequenceOptions): number[];
     string(len: number, charset?: string): string;
     palindrome(len: number, charset?: string): string;
     word(minLen: number, maxLen: number): string;
     words(count: number, minLen: number, maxLen: number): string[];
-    brackets(n: number, options?: {
-        types?: string;
-    }): string;
+    brackets(n: number, options?: { types?: string }): string;
     array<T>(count: number, itemGenerator: (index: number) => T): T[];
-    sorted(count: number, min: number, max: number, options?: {
-        order?: 'asc' | 'desc' | 'strictlyAsc' | 'strictlyDesc';
-    }): number[];
+    sorted(count: number, min: number, max: number, options?: { order?: 'asc' | 'desc' | 'strictlyAsc' | 'strictlyDesc' }): number[];
     /** Numeric array whose sorted order has adjacent differences >= gap. */
     /** Final output order may be shuffled. Sort it yourself if order matters. */
     sparse(count: number, min: number, max: number, gap: number): number[];
     /** Positive integers whose sum is sum. */
     /** Final output order may be shuffled. */
-    partition(count: number, sum: number, options?: {
-        minVal?: number;
-    }): number[];
+    partition(count: number, sum: number, options?: { minVal?: number }): number[];
     matrix<T>(rows: number, cols: number, cellGenerator: (r: number, c: number) => T): T[][];
     grid01(rows: number, cols: number, density?: number): number[][];
-    maze(rows: number, cols: number, options?: {
-        wall?: string;
-        road?: string;
-    }): string[][];
+    maze(rows: number, cols: number, options?: { wall?: string; road?: string }): string[][];
     /** Interval list. */
     /** When overlapping is false and sorted is not set, interval order may be shuffled. */
     intervals(n: number, min: number, max: number, options?: { overlapping?: boolean; sorted?: boolean; minLen?: number; maxLen?: number; allowGaps?: boolean; }): Array<[number, number]>;
@@ -185,11 +202,7 @@ declare module 'genesis-kit' {
     isLeap(year: number): boolean;
     year(minYear?: number, maxYear?: number): number;
     /** Supported format tokens are YYYY, MM, and DD. */
-    date(options?: {
-        minYear?: number;
-        maxYear?: number;
-        format?: string;
-    }): string;
+    date(options?: { minYear?: number; maxYear?: number; format?: string }): string;
     debug<T>(data: T, options?: DebugOptions): void;
     debug<T>(label: string, data: T, options?: DebugOptions): void;
     readonly base: {
@@ -202,74 +215,88 @@ declare module 'genesis-kit' {
   }
 
   export interface DatasetGenerateContext {
-      caseIndex: number;
-      caseNumber: number;
-      caseName: string;
-      repeatIndex: number;
-      seed: string;
-      g: DatasetGenerator;
+    caseIndex: number;
+    caseNumber: number;
+    caseName: string;
+    repeatIndex: number;
+    seed: string;
+    g: DatasetGenerator;
   }
 
   export interface DatasetValidationContext {
-      caseIndex: number;
-      caseNumber: number;
-      caseName: string;
-      repeatIndex: number;
-      tags: string[];
-      seed: string;
-      formattedInput: string;
+    caseIndex: number;
+    caseNumber: number;
+    caseName: string;
+    repeatIndex: number;
+    tags: string[];
+    seed: string;
+    formattedInput: string;
   }
 
   export interface DatasetValidationResult {
-      ok: boolean;
-      reason?: string;
+    ok: boolean;
+    reason?: string;
   }
 
   /** void/true => pass, false => fail with a generic message, string => fail with that reason. */
   /** { ok: false, reason } => fail with a structured reason. */
-  export type DatasetValidationReturn = void | boolean | string | DatasetValidationResult;
+  export type DatasetValidationReturn =
+    | void
+    | boolean
+    | string
+    | DatasetValidationResult;
 
   export interface DatasetStaticCase<TInput> {
-      name: string;
-      tags?: string[];
-      input: TInput;
-      generate?: never;
-      repeat?: never;
+    name: string;
+    tags?: string[];
+    input: TInput;
+    generate?: never;
+    repeat?: never;
   }
 
   export interface DatasetGeneratedCase<TInput> {
-      name: string;
-      tags?: string[];
-      repeat?: number;
-      generate(ctx: DatasetGenerateContext): MaybePromise<TInput>;
-      input?: never;
+    name: string;
+    tags?: string[];
+    repeat?: number;
+    generate(ctx: DatasetGenerateContext): MaybePromise<TInput>;
+    input?: never;
   }
 
   export type DatasetCase<TInput> = DatasetStaticCase<TInput> | DatasetGeneratedCase<TInput>;
 
   export interface DatasetConfig<TInput> {
-      solution: string;
-      outputDir?: string;
-      seed: SeedInput;
-      startFrom?: number;
-      runTimeoutMs?: number;
-      caseConcurrency?: number;
-      compiler?: string;
-      compilerFlags?: string[];
-      ojProfile?: OjProfile;
-      stackSizeBytes?: number;
-      manifestPath?: string | false;
-      format(input: TInput): FormatDocument | FormatNode;
-      validate?(input: TInput, context: DatasetValidationContext): MaybePromise<DatasetValidationReturn>;
-      cases: DatasetCase<TInput>[];
+    solution: string;
+    outputDir?: string;
+    seed: SeedInput;
+    startFrom?: number;
+    runTimeoutMs?: number;
+    caseConcurrency?: number;
+    compiler?: string;
+    compilerFlags?: string[];
+    ojProfile?: OjProfile;
+    stackSizeBytes?: number;
+    manifestPath?: string | false;
+
+    constraints?: DatasetConstraints;
+    format(input: TInput): FormatDocument | FormatNode;
+    validate?(
+      input: TInput,
+      context: DatasetValidationContext,
+    ): MaybePromise<DatasetValidationReturn>;
+    cases: DatasetCase<TInput>[];
   }
 
   export interface Dataset<TInput = unknown> {
-      readonly __genesisDataset: 2;
-      readonly config: DatasetConfig<TInput>;
+    readonly __genesisDataset: 2;
+    readonly config: DatasetConfig<TInput>;
   }
 
-  export function defineDataset<TInput>(config: DatasetConfig<TInput>): Dataset<TInput>;
+  export function defineDataset<TInput>(config: DatasetConfig<TInput>): Dataset<TInput> {
+    return {
+      __genesisDataset: 2,
+      config,
+    };
+  }
 }
 
 // Canonical patterns:

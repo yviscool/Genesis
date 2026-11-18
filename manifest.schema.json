@@ -1,12 +1,24 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://raw.githubusercontent.com/yviscool/Genesis/main/manifest.schema.json",
-  "title": "Genesis Dataset Manifest v2",
+  "title": "Genesis Dataset Manifest v3",
+  "description": "Every path in this document is relative to the directory containing the manifest file itself (see `pathBase`). Absolute paths only appear when a file genuinely lives outside that directory.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["version", "tool", "generatedAt", "dataset", "execution", "replay", "summary", "cases"],
+  "required": [
+    "version",
+    "tool",
+    "generatedAt",
+    "pathBase",
+    "dataset",
+    "sources",
+    "execution",
+    "replay",
+    "summary",
+    "cases"
+  ],
   "properties": {
-    "version": { "const": 2 },
+    "version": { "const": 3 },
     "tool": {
       "type": "object",
       "additionalProperties": false,
@@ -17,6 +29,10 @@
       }
     },
     "generatedAt": { "type": "string", "format": "date-time" },
+    "pathBase": {
+      "const": "manifest",
+      "description": "Anchor for every path below: the directory holding this manifest."
+    },
     "dataset": {
       "type": "object",
       "additionalProperties": false,
@@ -49,11 +65,22 @@
         "manifestPath": { "type": ["string", "null"] }
       }
     },
+    "sources": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Fingerprints of the inputs that produced this data. Compare these against the files on disk to decide whether the data is stale.",
+      "required": ["maker", "solution"],
+      "properties": {
+        "maker": { "anyOf": [{ "$ref": "#/$defs/source" }, { "type": "null" }] },
+        "solution": { "$ref": "#/$defs/source" }
+      }
+    },
     "execution": {
       "type": ["object", "null"],
       "additionalProperties": false,
-      "required": ["runArgs", "executablePath", "fingerprint"],
+      "required": ["runtime", "runArgs", "executablePath", "fingerprint"],
       "properties": {
+        "runtime": { "type": "string", "minLength": 1 },
         "runArgs": { "type": "array", "minItems": 1, "items": { "type": "string" } },
         "executablePath": { "type": "string", "minLength": 1 },
         "fingerprint": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
@@ -87,6 +114,16 @@
     }
   },
   "$defs": {
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "sha256", "bytes"],
+      "properties": {
+        "path": { "type": "string", "minLength": 1 },
+        "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+        "bytes": { "type": "integer", "minimum": 0 }
+      }
+    },
     "file": {
       "type": "object",
       "additionalProperties": false,

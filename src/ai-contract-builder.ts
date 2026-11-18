@@ -1,5 +1,6 @@
+import { readFileSync } from 'node:fs';
 import path from 'node:path';
-import ts from 'typescript';
+import { parseSync } from 'oxc-parser';
 import type { AiContractGeneratedData } from './ai-contract.types';
 
 export type {
@@ -8,8 +9,19 @@ export type {
   AiContractGeneratedMethod,
 } from './ai-contract.types';
 
-const DTS_CONFIG_FILE = 'tsconfig.dts.json';
-const DECLARATION_ROOTS = [
+/**
+ * The AI contract is derived straight from the TypeScript **source** with
+ * `oxc-parser` instead of `typescript`'s compiler API.
+ *
+ * Why: `typescript` was never declared in package.json — it only resolved
+ * because `tsdown` happens to hoist it, so any dependency bump could break
+ * `build:ai-contract`. Parsing the source also drops the separate `.d.ts`
+ * emit pass and the declaration printer, which removes ~80 lines and a full
+ * TypeScript program construction from the build.
+ */
+
+const SOURCE_ROOTS = [
+  'src/constraints.ts',
   'src/dataset.ts',
   'src/format.ts',
   'src/types.ts',
@@ -19,62 +31,76 @@ const DECLARATION_ROOTS = [
 ] as const;
 
 const HEADER_DECLARATIONS = [
-  ['generator/factory.d.ts', 'SeedInput'],
-  ['types.d.ts', 'OjProfile'],
-  ['dataset.d.ts', 'MaybePromise'],
-  ['types.d.ts', 'DebugOptions'],
-  ['types.d.ts', 'WeightOption'],
-  ['types.d.ts', 'GraphType'],
-  ['types.d.ts', 'GraphOptions'],
-  ['types.d.ts', 'TreeType'],
-  ['types.d.ts', 'TreeOptions'],
-  ['types.d.ts', 'BinaryTreeType'],
-  ['types.d.ts', 'BinaryTreeOptions'],
-  ['generator/numbers.d.ts', 'SequenceOptions'],
-  ['format.d.ts', 'FormatAtom'],
-  ['format.d.ts', 'FormatLine'],
-  ['format.d.ts', 'FormatTable'],
-  ['format.d.ts', 'FormatGrid'],
-  ['format.d.ts', 'FormatRaw'],
-  ['format.d.ts', 'FormatNode'],
-  ['format.d.ts', 'FormatDocument'],
+  ['src/generator/factory.ts', 'SeedInput'],
+  ['src/types.ts', 'OjProfile'],
+  ['src/dataset.ts', 'MaybePromise'],
+  ['src/types.ts', 'DebugOptions'],
+  ['src/types.ts', 'WeightOption'],
+  ['src/types.ts', 'GraphType'],
+  ['src/types.ts', 'GraphOptions'],
+  ['src/types.ts', 'TreeType'],
+  ['src/types.ts', 'TreeOptions'],
+  ['src/types.ts', 'BinaryTreeType'],
+  ['src/types.ts', 'BinaryTreeOptions'],
+  ['src/generator/numbers.ts', 'SequenceOptions'],
+  ['src/format.ts', 'FormatAtom'],
+  ['src/format.ts', 'FormatLine'],
+  ['src/format.ts', 'FormatTable'],
+  ['src/format.ts', 'FormatGrid'],
+  ['src/format.ts', 'FormatRaw'],
+  ['src/format.ts', 'FormatSeq'],
+  ['src/format.ts', 'FormatNode'],
+  ['src/format.ts', 'FormatDocument'],
+  ['src/format.ts', 'FormatTableOptions'],
+  ['src/format.ts', 'FormatRowsOptions'],
+  ['src/constraints.ts', 'FieldConstraint'],
+  ['src/constraints.ts', 'DatasetConstraints'],
 ] as const;
 
 const DATASET_DECLARATIONS = [
-  ['dataset.d.ts', 'DatasetGenerateContext'],
-  ['dataset.d.ts', 'DatasetValidationContext'],
-  ['dataset.d.ts', 'DatasetValidationResult'],
-  ['dataset.d.ts', 'DatasetValidationReturn'],
-  ['dataset.d.ts', 'DatasetStaticCase'],
-  ['dataset.d.ts', 'DatasetGeneratedCase'],
-  ['dataset.d.ts', 'DatasetCase'],
-  ['dataset.d.ts', 'DatasetConfig'],
-  ['dataset.d.ts', 'Dataset'],
-  ['dataset.d.ts', 'defineDataset'],
+  ['src/dataset.ts', 'DatasetGenerateContext'],
+  ['src/dataset.ts', 'DatasetValidationContext'],
+  ['src/dataset.ts', 'DatasetValidationResult'],
+  ['src/dataset.ts', 'DatasetValidationReturn'],
+  ['src/dataset.ts', 'DatasetStaticCase'],
+  ['src/dataset.ts', 'DatasetGeneratedCase'],
+  ['src/dataset.ts', 'DatasetCase'],
+  ['src/dataset.ts', 'DatasetConfig'],
+  ['src/dataset.ts', 'Dataset'],
+  ['src/dataset.ts', 'defineDataset'],
 ] as const;
 
 const OMITTED_GENERATOR_METHODS = new Set(['withRng', 'resetRng']);
 
+interface AstNode {
+  type: string;
+  start: number;
+  end: number;
+  [key: string]: unknown;
+}
+
+interface SourceUnit {
+  readonly code: string;
+  readonly body: readonly AstNode[];
+  readonly comments: readonly { start: number; end: number }[];
+}
+
 export function buildAiContractGeneratedData(projectRoot = process.cwd()): AiContractGeneratedData {
-  const outputs = emitDeclarationFiles(projectRoot);
-  const printer = ts.createPrinter({
-    newLine: ts.NewLineKind.LineFeed,
-    removeComments: true,
-  });
+  const sources = loadSources(projectRoot);
 
-  const headerDeclarations = HEADER_DECLARATIONS.map(([fileName, declarationName]) =>
-    extractNamedDeclarationBlock(outputs, printer, fileName, declarationName),
+  const headerDeclarations = HEADER_DECLARATIONS.map(([file, name]) =>
+    extractNamedDeclarationBlock(sources, file, name),
   );
 
-  const datasetDeclarations = DATASET_DECLARATIONS.map(([fileName, declarationName]) =>
-    extractNamedDeclarationBlock(outputs, printer, fileName, declarationName),
+  const datasetDeclarations = DATASET_DECLARATIONS.map(([file, name]) =>
+    extractNamedDeclarationBlock(sources, file, name),
   );
 
-  const formatSource = getDeclarationSourceFile(outputs, 'format.d.ts');
-  const generatorSource = getDeclarationSourceFile(outputs, 'generator/types.d.ts');
+  const formatUnit = getSourceUnit(sources, 'src/format.ts');
+  const generatorUnit = getSourceUnit(sources, 'src/generator/types.ts');
 
-  const fmtMethods = extractFmtMethods(formatSource, printer);
-  const { generatorMethods, baseMethods, charsetProperties } = extractGeneratorSurface(generatorSource, printer);
+  const fmtMethods = extractFmtMethods(formatUnit);
+  const { generatorMethods, baseMethods, charsetProperties } = extractGeneratorSurface(generatorUnit);
 
   return {
     headerDeclarations,
@@ -98,220 +124,208 @@ export function renderAiContractGeneratedSource(data: AiContractGeneratedData): 
   ].join('\n');
 }
 
-function emitDeclarationFiles(projectRoot: string): Map<string, string> {
-  const configPath = path.join(projectRoot, DTS_CONFIG_FILE);
-  const configFile = ts.readConfigFile(configPath, ts.sys.readFile);
-
-  if (configFile.error) {
-    throw new Error(formatDiagnostics([configFile.error]));
+function loadSources(projectRoot: string): Map<string, SourceUnit> {
+  const sources = new Map<string, SourceUnit>();
+  for (const relativePath of SOURCE_ROOTS) {
+    const absolutePath = path.join(projectRoot, relativePath);
+    const code = readFileSync(absolutePath, 'utf8');
+    const result = parseSync(relativePath, code);
+    if (result.errors.length > 0) {
+      const detail = result.errors.map(error => error.message).join('; ');
+      throw new Error(`Failed to parse ${relativePath}: ${detail}`);
+    }
+    sources.set(relativePath, {
+      code,
+      body: result.program.body as unknown as AstNode[],
+      comments: (result.comments ?? []) as { start: number; end: number }[],
+    });
   }
-
-  const parsedConfig = ts.parseJsonConfigFileContent(
-    configFile.config,
-    ts.sys,
-    projectRoot,
-    {
-      declaration: true,
-      declarationMap: false,
-      emitDeclarationOnly: true,
-      noEmit: false,
-    },
-    configPath,
-  );
-
-  if (parsedConfig.errors.length > 0) {
-    throw new Error(formatDiagnostics(parsedConfig.errors));
-  }
-
-  const rootNames = DECLARATION_ROOTS.map(fileName => path.join(projectRoot, fileName));
-  const program = ts.createProgram({
-    rootNames,
-    options: parsedConfig.options,
-  });
-
-  const preEmitDiagnostics = ts.getPreEmitDiagnostics(program);
-  if (preEmitDiagnostics.length > 0) {
-    throw new Error(formatDiagnostics(preEmitDiagnostics));
-  }
-
-  const outDir = path.resolve(projectRoot, parsedConfig.options.outDir ?? 'dist');
-  const outputs = new Map<string, string>();
-  const emitResult = program.emit(
-    undefined,
-    (fileName, text) => {
-      if (!fileName.endsWith('.d.ts')) return;
-      const relativePath = normalizePath(path.relative(outDir, fileName));
-      outputs.set(relativePath, text);
-    },
-    undefined,
-    true,
-  );
-
-  if (emitResult.diagnostics.length > 0) {
-    throw new Error(formatDiagnostics(emitResult.diagnostics));
-  }
-
-  return outputs;
+  return sources;
 }
 
-function getDeclarationSourceFile(outputs: Map<string, string>, fileName: string): ts.SourceFile {
-  const text = outputs.get(fileName);
-  if (!text) {
-    throw new Error(`Missing emitted declaration file: ${fileName}`);
+function getSourceUnit(sources: Map<string, SourceUnit>, file: string): SourceUnit {
+  const unit = sources.get(file);
+  if (!unit) {
+    throw new Error(`Missing source unit '${file}'. Add it to SOURCE_ROOTS.`);
   }
-  return ts.createSourceFile(fileName, text, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+  return unit;
+}
+
+/** Slice the original source text for `node`, dropping any comments inside it. */
+function sliceNode(unit: SourceUnit, node: AstNode): string {
+  let text = unit.code.slice(node.start, node.end);
+  const inner = unit.comments
+    .filter(comment => comment.start >= node.start && comment.end <= node.end)
+    .map(comment => ({ start: comment.start - node.start, end: comment.end - node.start }))
+    .sort((left, right) => right.start - left.start);
+
+  for (const comment of inner) {
+    text = text.slice(0, comment.start) + text.slice(comment.end);
+  }
+
+  return text;
+}
+
+function normalizeDeclaration(text: string): string {
+  return text
+    .replace(/\r\n/g, '\n')
+    .replace(/\bexport\s+declare\s+/g, 'export ')
+    .replace(/[ \t]+$/gm, '')
+    .trim();
+}
+
+function firstLine(lines: readonly string[]): string {
+  const line = lines.find(item => item.trim().length > 0);
+  if (!line) {
+    throw new Error('Declaration lines are empty.');
+  }
+  return line.trim();
 }
 
 function extractNamedDeclarationBlock(
-  outputs: Map<string, string>,
-  printer: ts.Printer,
-  fileName: string,
+  sources: Map<string, SourceUnit>,
+  file: string,
   declarationName: string,
-): AiContractGeneratedBlock {
-  const sourceFile = getDeclarationSourceFile(outputs, fileName);
-  const node = findNamedDeclaration(sourceFile, declarationName);
+): { name: string; declarationLines: string[] } {
+  const unit = getSourceUnit(sources, file);
+  const statement = findNamedDeclaration(unit, declarationName);
 
   return {
     name: declarationName,
-    declarationLines: printNodeLines(node, sourceFile, printer),
+    declarationLines: normalizeDeclaration(sliceNode(unit, statement)).split('\n'),
   };
 }
 
-function findNamedDeclaration(sourceFile: ts.SourceFile, declarationName: string): ts.Statement {
-  for (const statement of sourceFile.statements) {
-    if (
-      (ts.isTypeAliasDeclaration(statement)
-        || ts.isInterfaceDeclaration(statement)
-        || ts.isFunctionDeclaration(statement))
-      && statement.name?.text === declarationName
-    ) {
-      return statement;
+function findNamedDeclaration(unit: SourceUnit, declarationName: string): AstNode {
+  for (const statement of unit.body) {
+    if (statement.type !== 'ExportNamedDeclaration') continue;
+    const declaration = statement.declaration as AstNode | null | undefined;
+    if (!declaration) continue;
+
+    if (declaration.type === 'TSInterfaceDeclaration' || declaration.type === 'TSTypeAliasDeclaration') {
+      const id = declaration.id as AstNode | undefined;
+      if (id && (id as { name?: string }).name === declarationName) return statement;
+    }
+    if (declaration.type === 'FunctionDeclaration') {
+      const id = declaration.id as AstNode | undefined;
+      if (id && (id as { name?: string }).name === declarationName) return statement;
+    }
+    if (declaration.type === 'VariableDeclaration') {
+      const declarations = declaration.declarations as AstNode[];
+      if (declarations.some(item => (item.id as { name?: string }).name === declarationName)) {
+        return statement;
+      }
     }
   }
 
-  throw new Error(`Missing declaration '${declarationName}' in ${sourceFile.fileName}`);
+  throw new Error(`Missing declaration '${declarationName}'.`);
 }
 
-function extractFmtMethods(sourceFile: ts.SourceFile, printer: ts.Printer): AiContractGeneratedMethod[] {
-  const statement = sourceFile.statements.find(item =>
-    ts.isVariableStatement(item)
-      && item.declarationList.declarations.some(declaration =>
-        ts.isIdentifier(declaration.name) && declaration.name.text === 'fmt',
-      ),
-  );
-
-  if (!statement || !ts.isVariableStatement(statement)) {
-    throw new Error(`Missing fmt declaration in ${sourceFile.fileName}`);
+function extractFmtMethods(unit: SourceUnit): { name: string; signature: string; declarationLines: string[] }[] {
+  const statement = findNamedDeclaration(unit, 'fmt');
+  const declarations = (statement.declaration as AstNode).declarations as AstNode[];
+  const fmtDeclaration = declarations.find(item => (item.id as { name?: string }).name === 'fmt');
+  if (!fmtDeclaration) {
+    throw new Error('Missing fmt declaration.');
   }
 
-  const declaration = statement.declarationList.declarations.find(item =>
-    ts.isIdentifier(item.name) && item.name.text === 'fmt',
-  );
-
-  if (!declaration || !declaration.type || !ts.isTypeLiteralNode(declaration.type)) {
-    throw new Error(`fmt declaration does not have a type literal in ${sourceFile.fileName}`);
+  const init = fmtDeclaration.init as AstNode;
+  const objectExpression = init.type === 'TSAsExpression' ? (init.expression as AstNode) : init;
+  if (objectExpression.type !== 'ObjectExpression') {
+    throw new Error(`fmt is not initialised with an object literal (got ${objectExpression.type}).`);
   }
 
-  return declaration.type.members.map(member => {
-    if (!ts.isPropertySignature(member) || !member.type || !ts.isFunctionTypeNode(member.type)) {
-      throw new Error(`Unsupported fmt member in ${sourceFile.fileName}`);
+  const properties = objectExpression.properties as AstNode[];
+  return properties.map(property => {
+    const name = (property.key as { name?: string }).name;
+    if (!name) {
+      throw new Error('Unsupported fmt member without a static name.');
     }
-
-    const name = getPropertyNameText(member.name);
-    const methodSignature = ts.factory.createMethodSignature(
-      undefined,
-      member.name,
-      member.questionToken,
-      member.type.typeParameters,
-      member.type.parameters,
-      member.type.type,
-    );
-    const declarationLines = printNodeLines(methodSignature, sourceFile, printer);
-
-    return {
-      name,
-      signature: firstDeclarationLine(declarationLines),
-      declarationLines,
-    };
+    const value = property.value as AstNode;
+    const returnType = value.returnType as AstNode | undefined;
+    if (!returnType) {
+      throw new Error(`fmt.${name} is missing an explicit return type.`);
+    }
+    // `(...params): ReturnType` — for a function expression value.start is the opening parenthesis.
+    const signatureText = `${name}${unit.code.slice(value.start, returnType.end)};`;
+    return { name, signature: signatureText, declarationLines: [signatureText] };
   });
 }
 
-function extractGeneratorSurface(
-  sourceFile: ts.SourceFile,
-  printer: ts.Printer,
-): {
-  generatorMethods: AiContractGeneratedMethod[];
-  baseMethods: AiContractGeneratedMethod[];
+function extractGeneratorSurface(unit: SourceUnit): {
+  generatorMethods: { name: string; signature: string; declarationLines: string[] }[];
+  baseMethods: { name: string; signature: string; declarationLines: string[] }[];
   charsetProperties: string[];
 } {
-  const interfaceNode = sourceFile.statements.find(item =>
-    ts.isInterfaceDeclaration(item) && item.name.text === 'IGenerator',
-  );
+  const statement = findNamedDeclaration(unit, 'IGenerator');
+  const interfaceNode = statement.declaration as AstNode;
+  const members = (interfaceNode.body as AstNode).body as AstNode[];
 
-  if (!interfaceNode || !ts.isInterfaceDeclaration(interfaceNode)) {
-    throw new Error(`Missing IGenerator declaration in ${sourceFile.fileName}`);
-  }
-
-  const generatorMethods: AiContractGeneratedMethod[] = [];
-  const baseMethods: AiContractGeneratedMethod[] = [];
+  const generatorMethods: { name: string; signature: string; declarationLines: string[] }[] = [];
+  const baseMethods: { name: string; signature: string; declarationLines: string[] }[] = [];
   const charsetProperties: string[] = [];
   const generatorIndexByName = new Map<string, number>();
   const baseIndexByName = new Map<string, number>();
 
-  for (const member of interfaceNode.members) {
-    if (ts.isMethodSignature(member)) {
-      const name = getPropertyNameText(member.name);
-      if (OMITTED_GENERATOR_METHODS.has(name)) continue;
-      pushMethodSignature(generatorMethods, generatorIndexByName, name, member, sourceFile, printer);
+  for (const member of members) {
+    if (member.type === 'TSMethodSignature') {
+      const name = (member.key as { name?: string }).name;
+      if (!name || OMITTED_GENERATOR_METHODS.has(name)) continue;
+      pushMethodSignature(
+        generatorMethods,
+        generatorIndexByName,
+        name,
+        normalizeDeclaration(sliceNode(unit, member)),
+      );
       continue;
     }
 
-    if (!ts.isPropertySignature(member) || !member.type || !ts.isTypeLiteralNode(member.type)) {
-      continue;
-    }
+    if (member.type !== 'TSPropertySignature') continue;
+    const name = (member.key as { name?: string }).name;
+    const typeLiteral = (member.typeAnnotation as AstNode | undefined)?.typeAnnotation as AstNode | undefined;
+    if (!typeLiteral || typeLiteral.type !== 'TSTypeLiteral') continue;
+    const nested = typeLiteral.members as AstNode[];
 
-    const name = getPropertyNameText(member.name);
     if (name === 'CHARSET') {
-      for (const nestedMember of member.type.members) {
-        if (!ts.isPropertySignature(nestedMember)) continue;
-        charsetProperties.push(getPropertyNameText(nestedMember.name));
+      for (const nestedMember of nested) {
+        const nestedName = (nestedMember.key as { name?: string }).name;
+        if (nestedMember.type === 'TSPropertySignature' && nestedName) charsetProperties.push(nestedName);
       }
       continue;
     }
 
     if (name === 'base') {
-      for (const nestedMember of member.type.members) {
-        if (ts.isMethodSignature(nestedMember)) {
-          const methodName = getPropertyNameText(nestedMember.name);
-          pushMethodSignature(baseMethods, baseIndexByName, methodName, nestedMember, sourceFile, printer);
-        }
+      for (const nestedMember of nested) {
+        if (nestedMember.type !== 'TSMethodSignature') continue;
+        const methodName = (nestedMember.key as { name?: string }).name;
+        if (!methodName) continue;
+        pushMethodSignature(
+          baseMethods,
+          baseIndexByName,
+          methodName,
+          normalizeDeclaration(sliceNode(unit, nestedMember)),
+        );
       }
     }
   }
 
-  return {
-    generatorMethods,
-    baseMethods,
-    charsetProperties,
-  };
+  return { generatorMethods, baseMethods, charsetProperties };
 }
 
 function pushMethodSignature(
-  methods: AiContractGeneratedMethod[],
+  methods: { name: string; signature: string; declarationLines: string[] }[],
   indexByName: Map<string, number>,
   name: string,
-  signatureNode: ts.MethodSignature,
-  sourceFile: ts.SourceFile,
-  printer: ts.Printer,
+  declarationText: string,
 ): void {
-  const declarationLines = printNodeLines(signatureNode, sourceFile, printer);
+  const declarationLines = declarationText.split('\n');
   const index = indexByName.get(name);
 
   if (index === undefined) {
     indexByName.set(name, methods.length);
     methods.push({
       name,
-      signature: firstDeclarationLine(declarationLines),
+      signature: firstLine(declarationLines),
       declarationLines,
     });
     return;
@@ -322,44 +336,4 @@ function pushMethodSignature(
     ...existing,
     declarationLines: [...existing.declarationLines, ...declarationLines],
   };
-}
-
-function printNodeLines(node: ts.Node, sourceFile: ts.SourceFile, printer: ts.Printer): string[] {
-  return normalizePrintedDeclaration(
-    printer.printNode(ts.EmitHint.Unspecified, node, sourceFile),
-  ).split('\n');
-}
-
-function normalizePrintedDeclaration(text: string): string {
-  return text
-    .replace(/\r\n/g, '\n')
-    .replace(/\bexport\s+declare\s+/g, 'export ')
-    .trim();
-}
-
-function firstDeclarationLine(lines: readonly string[]): string {
-  const line = lines.find(item => item.trim().length > 0);
-  if (!line) {
-    throw new Error('Method declaration lines are empty.');
-  }
-  return line.trim();
-}
-
-function getPropertyNameText(name: ts.PropertyName): string {
-  if (ts.isIdentifier(name) || ts.isStringLiteral(name) || ts.isNumericLiteral(name)) {
-    return name.text;
-  }
-  throw new Error(`Unsupported property name kind: ${ts.SyntaxKind[name.kind]}`);
-}
-
-function normalizePath(fileName: string): string {
-  return fileName.split(path.sep).join('/');
-}
-
-function formatDiagnostics(diagnostics: readonly ts.Diagnostic[]): string {
-  return ts.formatDiagnosticsWithColorAndContext(diagnostics, {
-    getCanonicalFileName: fileName => fileName,
-    getCurrentDirectory: () => process.cwd(),
-    getNewLine: () => '\n',
-  });
 }

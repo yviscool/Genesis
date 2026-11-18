@@ -27,22 +27,19 @@ export const AI_CONTRACT_GENERATED: AiContractGeneratedData = {
       "name": "DebugOptions",
       "declarationLines": [
         "export interface DebugOptions {",
-        "    separator?: string;",
-        "    printDims?: boolean;",
-        "    printType?: boolean;",
-        "    printStats?: boolean;",
-        "    truncate?: number;",
-        "    colors?: boolean;",
+        "  separator?: string;",
+        "  printDims?: boolean;",
+        "  printType?: boolean;",
+        "  printStats?: boolean;",
+        "  truncate?: number;",
+        "  colors?: boolean;",
         "}"
       ]
     },
     {
       "name": "WeightOption",
       "declarationLines": [
-        "export type WeightOption = boolean | [",
-        "    min: number,",
-        "    max: number",
-        "];"
+        "export type WeightOption = boolean | [min: number, max: number];"
       ]
     },
     {
@@ -55,13 +52,13 @@ export const AI_CONTRACT_GENERATED: AiContractGeneratedData = {
       "name": "GraphOptions",
       "declarationLines": [
         "export interface GraphOptions {",
-        "    type?: GraphType;",
-        "    directed?: boolean;",
-        "    weighted?: WeightOption;",
-        "    connected?: boolean;",
-        "    noSelfLoops?: boolean;",
-        "    oneBased?: boolean;",
-        "    negativeCycle?: boolean;",
+        "  type?: GraphType;",
+        "  directed?: boolean;",
+        "  weighted?: WeightOption;",
+        "  connected?: boolean;",
+        "  noSelfLoops?: boolean;",
+        "  oneBased?: boolean;",
+        "  negativeCycle?: boolean;",
         "}"
       ]
     },
@@ -75,9 +72,9 @@ export const AI_CONTRACT_GENERATED: AiContractGeneratedData = {
       "name": "TreeOptions",
       "declarationLines": [
         "export interface TreeOptions {",
-        "    type?: TreeType;",
-        "    weighted?: WeightOption;",
-        "    oneBased?: boolean;",
+        "  type?: TreeType;",
+        "  weighted?: WeightOption;",
+        "  oneBased?: boolean;",
         "}"
       ]
     },
@@ -91,35 +88,19 @@ export const AI_CONTRACT_GENERATED: AiContractGeneratedData = {
       "name": "BinaryTreeOptions",
       "declarationLines": [
         "export interface BinaryTreeOptions {",
-        "    type?: BinaryTreeType;",
-        "    oneBased?: boolean;",
+        "  type?: BinaryTreeType;",
+        "  oneBased?: boolean;",
         "}"
       ]
     },
     {
       "name": "SequenceOptions",
       "declarationLines": [
-        "export type SequenceOptions = {",
-        "    type: 'arithmetic';",
-        "    start: number;",
-        "    diff: number;",
-        "    count: number;",
-        "} | {",
-        "    type: 'geometric';",
-        "    start: number;",
-        "    ratio: number;",
-        "    count: number;",
-        "} | {",
-        "    type: 'fibonacci';",
-        "    count: number;",
-        "    first?: number;",
-        "    second?: number;",
-        "} | {",
-        "    type: 'custom';",
-        "    init: number[];",
-        "    fn: (prev: number[]) => number;",
-        "    count: number;",
-        "};"
+        "export type SequenceOptions =",
+        "    | { type: 'arithmetic'; start: number; diff: number; count: number }",
+        "    | { type: 'geometric'; start: number; ratio: number; count: number }",
+        "    | { type: 'fibonacci'; count: number; first?: number; second?: number }",
+        "    | { type: 'custom'; init: number[]; fn: (prev: number[]) => number; count: number };"
       ]
     },
     {
@@ -132,8 +113,10 @@ export const AI_CONTRACT_GENERATED: AiContractGeneratedData = {
       "name": "FormatLine",
       "declarationLines": [
         "export interface FormatLine {",
-        "    readonly kind: 'line';",
-        "    readonly items: readonly FormatAtom[];",
+        "  readonly kind: 'line';",
+        "  readonly items: readonly FormatAtom[];",
+        "",
+        "  readonly sep?: string;",
         "}"
       ]
     },
@@ -141,8 +124,12 @@ export const AI_CONTRACT_GENERATED: AiContractGeneratedData = {
       "name": "FormatTable",
       "declarationLines": [
         "export interface FormatTable {",
-        "    readonly kind: 'table';",
-        "    readonly rows: readonly (readonly FormatAtom[])[];",
+        "  readonly kind: 'table';",
+        "  readonly rows: readonly (readonly FormatAtom[])[];",
+        "",
+        "  readonly sep?: string;",
+        "",
+        "  readonly rowSep?: string;",
         "}"
       ]
     },
@@ -150,8 +137,8 @@ export const AI_CONTRACT_GENERATED: AiContractGeneratedData = {
       "name": "FormatGrid",
       "declarationLines": [
         "export interface FormatGrid {",
-        "    readonly kind: 'grid';",
-        "    readonly rows: readonly (string | readonly FormatAtom[])[];",
+        "  readonly kind: 'grid';",
+        "  readonly rows: readonly (string | readonly FormatAtom[])[];",
         "}"
       ]
     },
@@ -159,24 +146,80 @@ export const AI_CONTRACT_GENERATED: AiContractGeneratedData = {
       "name": "FormatRaw",
       "declarationLines": [
         "export interface FormatRaw {",
-        "    readonly kind: 'raw';",
-        "    readonly text: string;",
+        "  readonly kind: 'raw';",
+        "  readonly text: string;",
+        "}"
+      ]
+    },
+    {
+      "name": "FormatSeq",
+      "declarationLines": [
+        "export interface FormatSeq {",
+        "  readonly kind: 'seq';",
+        "  readonly nodes: readonly FormatNode[];",
+        "  readonly sep: string;",
         "}"
       ]
     },
     {
       "name": "FormatNode",
       "declarationLines": [
-        "export type FormatNode = FormatLine | FormatTable | FormatGrid | FormatRaw;"
+        "export type FormatNode = FormatLine | FormatTable | FormatGrid | FormatRaw | FormatSeq;"
       ]
     },
     {
       "name": "FormatDocument",
       "declarationLines": [
         "export interface FormatDocument {",
-        "    readonly __genesisFormat: 2;",
-        "    readonly nodes: readonly FormatNode[];",
+        "  readonly __genesisFormat: 2;",
+        "  readonly nodes: readonly FormatNode[];",
         "}"
+      ]
+    },
+    {
+      "name": "FormatTableOptions",
+      "declarationLines": [
+        "export interface FormatTableOptions {",
+        "  sep?: string;",
+        "  rowSep?: string;",
+        "}"
+      ]
+    },
+    {
+      "name": "FormatRowsOptions",
+      "declarationLines": [
+        "export interface FormatRowsOptions extends FormatTableOptions {",
+        "",
+        "  header?: readonly FormatAtom[];",
+        "}"
+      ]
+    },
+    {
+      "name": "FieldConstraint",
+      "declarationLines": [
+        "export interface FieldConstraint {",
+        "",
+        "  int?: boolean;",
+        "  min?: number;",
+        "  max?: number;",
+        "",
+        "  ref?: string;",
+        "",
+        "  eq?: number | string;",
+        "",
+        "  len?: number | string;",
+        "",
+        "  minLen?: number | string;",
+        "",
+        "  maxLen?: number | string;",
+        "  oneOf?: readonly (string | number)[];",
+        "}"
+      ]
+    },
+    {
+      "name": "DatasetConstraints",
+      "declarationLines": [
+        "export type DatasetConstraints = Record<string, FieldConstraint>;"
       ]
     }
   ],
@@ -185,12 +228,12 @@ export const AI_CONTRACT_GENERATED: AiContractGeneratedData = {
       "name": "DatasetGenerateContext",
       "declarationLines": [
         "export interface DatasetGenerateContext {",
-        "    caseIndex: number;",
-        "    caseNumber: number;",
-        "    caseName: string;",
-        "    repeatIndex: number;",
-        "    seed: string;",
-        "    g: DatasetGenerator;",
+        "  caseIndex: number;",
+        "  caseNumber: number;",
+        "  caseName: string;",
+        "  repeatIndex: number;",
+        "  seed: string;",
+        "  g: DatasetGenerator;",
         "}"
       ]
     },
@@ -198,13 +241,13 @@ export const AI_CONTRACT_GENERATED: AiContractGeneratedData = {
       "name": "DatasetValidationContext",
       "declarationLines": [
         "export interface DatasetValidationContext {",
-        "    caseIndex: number;",
-        "    caseNumber: number;",
-        "    caseName: string;",
-        "    repeatIndex: number;",
-        "    tags: string[];",
-        "    seed: string;",
-        "    formattedInput: string;",
+        "  caseIndex: number;",
+        "  caseNumber: number;",
+        "  caseName: string;",
+        "  repeatIndex: number;",
+        "  tags: string[];",
+        "  seed: string;",
+        "  formattedInput: string;",
         "}"
       ]
     },
@@ -212,26 +255,30 @@ export const AI_CONTRACT_GENERATED: AiContractGeneratedData = {
       "name": "DatasetValidationResult",
       "declarationLines": [
         "export interface DatasetValidationResult {",
-        "    ok: boolean;",
-        "    reason?: string;",
+        "  ok: boolean;",
+        "  reason?: string;",
         "}"
       ]
     },
     {
       "name": "DatasetValidationReturn",
       "declarationLines": [
-        "export type DatasetValidationReturn = void | boolean | string | DatasetValidationResult;"
+        "export type DatasetValidationReturn =",
+        "  | void",
+        "  | boolean",
+        "  | string",
+        "  | DatasetValidationResult;"
       ]
     },
     {
       "name": "DatasetStaticCase",
       "declarationLines": [
         "export interface DatasetStaticCase<TInput> {",
-        "    name: string;",
-        "    tags?: string[];",
-        "    input: TInput;",
-        "    generate?: never;",
-        "    repeat?: never;",
+        "  name: string;",
+        "  tags?: string[];",
+        "  input: TInput;",
+        "  generate?: never;",
+        "  repeat?: never;",
         "}"
       ]
     },
@@ -239,11 +286,11 @@ export const AI_CONTRACT_GENERATED: AiContractGeneratedData = {
       "name": "DatasetGeneratedCase",
       "declarationLines": [
         "export interface DatasetGeneratedCase<TInput> {",
-        "    name: string;",
-        "    tags?: string[];",
-        "    repeat?: number;",
-        "    generate(ctx: DatasetGenerateContext): MaybePromise<TInput>;",
-        "    input?: never;",
+        "  name: string;",
+        "  tags?: string[];",
+        "  repeat?: number;",
+        "  generate(ctx: DatasetGenerateContext): MaybePromise<TInput>;",
+        "  input?: never;",
         "}"
       ]
     },
@@ -257,20 +304,25 @@ export const AI_CONTRACT_GENERATED: AiContractGeneratedData = {
       "name": "DatasetConfig",
       "declarationLines": [
         "export interface DatasetConfig<TInput> {",
-        "    solution: string;",
-        "    outputDir?: string;",
-        "    seed: SeedInput;",
-        "    startFrom?: number;",
-        "    runTimeoutMs?: number;",
-        "    caseConcurrency?: number;",
-        "    compiler?: string;",
-        "    compilerFlags?: string[];",
-        "    ojProfile?: OjProfile;",
-        "    stackSizeBytes?: number;",
-        "    manifestPath?: string | false;",
-        "    format(input: TInput): FormatDocument | FormatNode;",
-        "    validate?(input: TInput, context: DatasetValidationContext): MaybePromise<DatasetValidationReturn>;",
-        "    cases: DatasetCase<TInput>[];",
+        "  solution: string;",
+        "  outputDir?: string;",
+        "  seed: SeedInput;",
+        "  startFrom?: number;",
+        "  runTimeoutMs?: number;",
+        "  caseConcurrency?: number;",
+        "  compiler?: string;",
+        "  compilerFlags?: string[];",
+        "  ojProfile?: OjProfile;",
+        "  stackSizeBytes?: number;",
+        "  manifestPath?: string | false;",
+        "",
+        "  constraints?: DatasetConstraints;",
+        "  format(input: TInput): FormatDocument | FormatNode;",
+        "  validate?(",
+        "    input: TInput,",
+        "    context: DatasetValidationContext,",
+        "  ): MaybePromise<DatasetValidationReturn>;",
+        "  cases: DatasetCase<TInput>[];",
         "}"
       ]
     },
@@ -278,15 +330,20 @@ export const AI_CONTRACT_GENERATED: AiContractGeneratedData = {
       "name": "Dataset",
       "declarationLines": [
         "export interface Dataset<TInput = unknown> {",
-        "    readonly __genesisDataset: 2;",
-        "    readonly config: DatasetConfig<TInput>;",
+        "  readonly __genesisDataset: 2;",
+        "  readonly config: DatasetConfig<TInput>;",
         "}"
       ]
     },
     {
       "name": "defineDataset",
       "declarationLines": [
-        "export function defineDataset<TInput>(config: DatasetConfig<TInput>): Dataset<TInput>;"
+        "export function defineDataset<TInput>(config: DatasetConfig<TInput>): Dataset<TInput> {",
+        "  return {",
+        "    __genesisDataset: 2,",
+        "    config,",
+        "  };",
+        "}"
       ]
     }
   ],
@@ -307,9 +364,9 @@ export const AI_CONTRACT_GENERATED: AiContractGeneratedData = {
     },
     {
       "name": "table",
-      "signature": "table(rows: readonly (readonly FormatAtom[])[]): FormatTable;",
+      "signature": "table(rows: readonly (readonly FormatAtom[])[], options?: FormatTableOptions): FormatTable;",
       "declarationLines": [
-        "table(rows: readonly (readonly FormatAtom[])[]): FormatTable;"
+        "table(rows: readonly (readonly FormatAtom[])[], options?: FormatTableOptions): FormatTable;"
       ]
     },
     {
@@ -324,6 +381,48 @@ export const AI_CONTRACT_GENERATED: AiContractGeneratedData = {
       "signature": "raw(text: string): FormatRaw;",
       "declarationLines": [
         "raw(text: string): FormatRaw;"
+      ]
+    },
+    {
+      "name": "join",
+      "signature": "join(sep: string, ...items: FormatAtom[]): FormatLine;",
+      "declarationLines": [
+        "join(sep: string, ...items: FormatAtom[]): FormatLine;"
+      ]
+    },
+    {
+      "name": "flat",
+      "signature": "flat(values: readonly FormatAtom[]): FormatLine;",
+      "declarationLines": [
+        "flat(values: readonly FormatAtom[]): FormatLine;"
+      ]
+    },
+    {
+      "name": "tuple",
+      "signature": "tuple(...items: FormatAtom[]): FormatLine;",
+      "declarationLines": [
+        "tuple(...items: FormatAtom[]): FormatLine;"
+      ]
+    },
+    {
+      "name": "seq",
+      "signature": "seq(nodes: readonly FormatNode[], sep = '\\n'): FormatSeq;",
+      "declarationLines": [
+        "seq(nodes: readonly FormatNode[], sep = '\\n'): FormatSeq;"
+      ]
+    },
+    {
+      "name": "block",
+      "signature": "block(...nodes: FormatNode[]): FormatSeq;",
+      "declarationLines": [
+        "block(...nodes: FormatNode[]): FormatSeq;"
+      ]
+    },
+    {
+      "name": "rows",
+      "signature": "rows(rows: readonly (readonly FormatAtom[])[], options?: FormatRowsOptions): FormatNode;",
+      "declarationLines": [
+        "rows(rows: readonly (readonly FormatAtom[])[], options?: FormatRowsOptions): FormatNode;"
       ]
     }
   ],
@@ -379,12 +478,9 @@ export const AI_CONTRACT_GENERATED: AiContractGeneratedData = {
     },
     {
       "name": "coprime",
-      "signature": "coprime(min: number, max: number): [",
+      "signature": "coprime(min: number, max: number): [number, number];",
       "declarationLines": [
-        "coprime(min: number, max: number): [",
-        "    number,",
-        "    number",
-        "];"
+        "coprime(min: number, max: number): [number, number];"
       ]
     },
     {
@@ -431,11 +527,9 @@ export const AI_CONTRACT_GENERATED: AiContractGeneratedData = {
     },
     {
       "name": "brackets",
-      "signature": "brackets(n: number, options?: {",
+      "signature": "brackets(n: number, options?: { types?: string }): string;",
       "declarationLines": [
-        "brackets(n: number, options?: {",
-        "    types?: string;",
-        "}): string;"
+        "brackets(n: number, options?: { types?: string }): string;"
       ]
     },
     {
@@ -447,11 +541,9 @@ export const AI_CONTRACT_GENERATED: AiContractGeneratedData = {
     },
     {
       "name": "sorted",
-      "signature": "sorted(count: number, min: number, max: number, options?: {",
+      "signature": "sorted(count: number, min: number, max: number, options?: { order?: 'asc' | 'desc' | 'strictlyAsc' | 'strictlyDesc' }): number[];",
       "declarationLines": [
-        "sorted(count: number, min: number, max: number, options?: {",
-        "    order?: 'asc' | 'desc' | 'strictlyAsc' | 'strictlyDesc';",
-        "}): number[];"
+        "sorted(count: number, min: number, max: number, options?: { order?: 'asc' | 'desc' | 'strictlyAsc' | 'strictlyDesc' }): number[];"
       ]
     },
     {
@@ -463,11 +555,9 @@ export const AI_CONTRACT_GENERATED: AiContractGeneratedData = {
     },
     {
       "name": "partition",
-      "signature": "partition(count: number, sum: number, options?: {",
+      "signature": "partition(count: number, sum: number, options?: { minVal?: number }): number[];",
       "declarationLines": [
-        "partition(count: number, sum: number, options?: {",
-        "    minVal?: number;",
-        "}): number[];"
+        "partition(count: number, sum: number, options?: { minVal?: number }): number[];"
       ]
     },
     {
@@ -486,12 +576,9 @@ export const AI_CONTRACT_GENERATED: AiContractGeneratedData = {
     },
     {
       "name": "maze",
-      "signature": "maze(rows: number, cols: number, options?: {",
+      "signature": "maze(rows: number, cols: number, options?: { wall?: string; road?: string }): string[][];",
       "declarationLines": [
-        "maze(rows: number, cols: number, options?: {",
-        "    wall?: string;",
-        "    road?: string;",
-        "}): string[][];"
+        "maze(rows: number, cols: number, options?: { wall?: string; road?: string }): string[][];"
       ]
     },
     {
@@ -499,12 +586,12 @@ export const AI_CONTRACT_GENERATED: AiContractGeneratedData = {
       "signature": "intervals(n: number, min: number, max: number, options?: {",
       "declarationLines": [
         "intervals(n: number, min: number, max: number, options?: {",
-        "    overlapping?: boolean;",
-        "    sorted?: boolean;",
-        "    minLen?: number;",
-        "    maxLen?: number;",
-        "    allowGaps?: boolean;",
-        "}): number[][];"
+        "        overlapping?: boolean;",
+        "        sorted?: boolean;",
+        "        minLen?: number;",
+        "        maxLen?: number;",
+        "        allowGaps?: boolean;",
+        "    }): number[][];"
       ]
     },
     {
@@ -552,11 +639,9 @@ export const AI_CONTRACT_GENERATED: AiContractGeneratedData = {
     },
     {
       "name": "points",
-      "signature": "points(n: number, minVal: number, maxVal: number, options?: {",
+      "signature": "points(n: number, minVal: number, maxVal: number, options?: { type?: 'random' | 'collinear' }): number[][];",
       "declarationLines": [
-        "points(n: number, minVal: number, maxVal: number, options?: {",
-        "    type?: 'random' | 'collinear';",
-        "}): number[][];"
+        "points(n: number, minVal: number, maxVal: number, options?: { type?: 'random' | 'collinear' }): number[][];"
       ]
     },
     {
@@ -575,12 +660,9 @@ export const AI_CONTRACT_GENERATED: AiContractGeneratedData = {
     },
     {
       "name": "binaryTree",
-      "signature": "binaryTree(n: number, options?: BinaryTreeOptions): {",
+      "signature": "binaryTree(n: number, options?: BinaryTreeOptions): { edges: number[][]; root: number };",
       "declarationLines": [
-        "binaryTree(n: number, options?: BinaryTreeOptions): {",
-        "    edges: number[][];",
-        "    root: number;",
-        "};"
+        "binaryTree(n: number, options?: BinaryTreeOptions): { edges: number[][]; root: number };"
       ]
     },
     {
@@ -599,13 +681,9 @@ export const AI_CONTRACT_GENERATED: AiContractGeneratedData = {
     },
     {
       "name": "date",
-      "signature": "date(options?: {",
+      "signature": "date(options?: { minYear?: number; maxYear?: number; format?: string }): string;",
       "declarationLines": [
-        "date(options?: {",
-        "    minYear?: number;",
-        "    maxYear?: number;",
-        "    format?: string;",
-        "}): string;"
+        "date(options?: { minYear?: number; maxYear?: number; format?: string }): string;"
       ]
     },
     {

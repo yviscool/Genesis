@@ -1,15 +1,42 @@
 import crypto from 'node:crypto';
-import { createReadStream } from 'node:fs';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { execa } from 'execa';
-import { version } from '../package.json';
 import { prepareForExecution, type ExecutionResult } from './execution';
 import { createGenerator } from './generator/factory';
+import { checkConstraints } from './constraints';
+import type { DatasetConstraints } from './constraints';
 import { normalizeFormat, renderFormatDocument } from './format';
+import {
+  defaultManifestPath,
+  digestFile,
+  readManifest,
+  sourceMatches,
+  writeManifest,
+  type DatasetCaseRecord,
+  type DatasetCaseStatus,
+  type DatasetErrorPhase,
+  type DatasetErrorRecord,
+  type DatasetFileRecord,
+  type DatasetManifest,
+  type DatasetManifestSummary,
+  type DatasetValidationSummary,
+  type ManifestFileRef,
+} from './manifest';
 import { isDataset, type Dataset, type DatasetConfig, type DatasetGeneratedCase, type DatasetValidationContext, type DatasetValidationReturn } from './dataset';
+
+export type {
+  DatasetCaseRecord,
+  DatasetCaseStatus,
+  DatasetErrorPhase,
+  DatasetErrorRecord,
+  DatasetFileRecord,
+  DatasetManifest,
+  DatasetManifestSummary,
+  DatasetValidationSummary,
+};
 
 export interface DatasetRunOptions {
   mode: 'generate' | 'validate';
@@ -18,6 +45,32 @@ export interface DatasetRunOptions {
   outputDir?: string;
   manifestPath?: string | false;
   cleanOutputDir?: boolean;
+  /** Restrict the run to a subset of the expanded cases. */
+  caseSelector?: DatasetCaseSelector | null;
+  /** Skip cases whose existing artifacts already match the manifest. */
+  resume?: boolean;
+  /** Delete numbered `.in` / `.out` files that the current run did not produce. */
+  prune?: boolean;
+  /** Override `config.caseConcurrency`. */
+  caseConcurrency?: number;
+  /**
+   * Append a final newline to the rendered `.in` when the format does not end with one.
+   * Off by default: `fmt` output is taken literally.
+   */
+  ensureTrailingNewline?: boolean;
+}
+
+/** Everything a caller may pass to the `*FromFile` helpers. */
+export type DatasetFileRunOptions = Omit<DatasetRunOptions, 'mode' | 'datasetFile'>;
+
+/**
+ * `--only` grammar: comma separated items, each of
+ *   `N` (case number), `N-M` (inclusive range), or a case name.
+ */
+export interface DatasetCaseSelector {
+  only?: string;
+  from?: number;
+  to?: number;
 }
 
 export interface DatasetReplaySelector {
@@ -35,91 +88,18 @@ export interface DatasetReplayInfo {
   outputDir: string;
 }
 
-export type DatasetCaseStatus = 'success' | 'failure';
-export type DatasetErrorPhase = 'config' | 'materialize' | 'format' | 'validate' | 'write-input' | 'execution' | 'write-output' | 'manifest';
-
-export interface DatasetErrorRecord {
-  phase: DatasetErrorPhase;
-  kind: 'generator' | 'formatter' | 'validation' | 'io' | 'execution' | 'timeout' | 'config';
-  message: string;
-}
-
-export interface DatasetFileRecord {
-  path: string;
-  sha256: string;
-  bytes: number;
-  lines?: number;
-}
-
-export interface DatasetValidationSummary {
-  status: 'not-run' | 'passed' | 'failed';
-  durationMs: number;
-  reason?: string;
-}
-
-export interface DatasetCaseRecord {
-  caseId: number;
-  caseNumber: number;
-  name: string;
-  repeatIndex: number;
-  tags: string[];
-  seed: string;
-  status: DatasetCaseStatus;
-  durationMs: number;
-  phases: {
-    materializeMs: number;
-    formatMs: number;
-    validateMs: number;
-    writeInputMs: number;
-    executionMs: number;
-    writeOutputMs: number;
-  };
-  validation: DatasetValidationSummary;
-  input: DatasetFileRecord | null;
-  output: DatasetFileRecord | null;
-  error: DatasetErrorRecord | null;
-}
-
-export interface DatasetManifest {
-  version: 2;
-  tool: {
-    name: 'genesis-kit';
-    version: string;
-  };
-  generatedAt: string;
-  dataset: {
-    modulePath: string | null;
-    solution: string;
-    outputDir: string;
-    seed: string;
-    startFrom: number;
-    runTimeoutMs: number;
-    caseConcurrency: number | null;
-    compiler: string | null;
-    compilerFlags: string[];
-    ojProfile: string | null;
-    stackSizeBytes: number | null;
-    manifestPath: string | null;
-  };
-  execution: {
-    runArgs: string[];
-    executablePath: string;
-    fingerprint: string;
-  } | null;
-  replay: DatasetReplayInfo | null;
-  summary: {
-    totalCases: number;
-    succeeded: number;
-    failed: number;
-    durationMs: number;
-  };
-  cases: DatasetCaseRecord[];
-}
-
 export interface DatasetRunResult {
   manifest: DatasetManifest | null;
   results: DatasetCaseRecord[];
-  summary: DatasetManifest['summary'];
+  /** Describes the manifest, i.e. every case the dataset declares. */
+  summary: DatasetManifestSummary;
+  /** Describes this invocation only — `skipped` counts carried-over / resumed cases. */
+  executed: {
+    totalCases: number;
+    succeeded: number;
+    failed: number;
+    skipped: number;
+  };
 }
 
 export async function loadDatasetFromFile(entryFile = 'make.ts'): Promise<Dataset<unknown>> {
@@ -160,22 +140,29 @@ async function importDatasetModule(resolvedPath: string, moduleUrl: string): Pro
   return import(moduleUrl);
 }
 
-export async function validateDatasetFromFile(entryFile = 'make.ts'): Promise<DatasetRunResult> {
+export async function validateDatasetFromFile(
+  entryFile = 'make.ts',
+  options: DatasetFileRunOptions = {},
+): Promise<DatasetRunResult> {
   const dataset = await loadDatasetFromFile(entryFile);
-  return validateDataset(dataset, { datasetFile: path.resolve(entryFile) });
+  return validateDataset(dataset, { ...options, datasetFile: path.resolve(entryFile) });
 }
 
-export async function generateDatasetFromFile(entryFile = 'make.ts'): Promise<DatasetRunResult> {
+export async function generateDatasetFromFile(
+  entryFile = 'make.ts',
+  options: DatasetFileRunOptions = {},
+): Promise<DatasetRunResult> {
   const dataset = await loadDatasetFromFile(entryFile);
-  return generateDataset(dataset, { datasetFile: path.resolve(entryFile) });
+  return generateDataset(dataset, { ...options, datasetFile: path.resolve(entryFile) });
 }
 
 export async function replayDatasetFromFile(
   entryFile = 'make.ts',
   selector: DatasetReplaySelector,
+  options: DatasetFileRunOptions = {},
 ): Promise<DatasetRunResult> {
   const dataset = await loadDatasetFromFile(entryFile);
-  return replayDataset(dataset, selector, { datasetFile: path.resolve(entryFile) });
+  return replayDataset(dataset, selector, { ...options, datasetFile: path.resolve(entryFile) });
 }
 
 export async function validateDataset<TInput>(
@@ -205,7 +192,7 @@ export async function replayDataset<TInput>(
   const replayOutputDir = selector.outputDir
     ? resolvePathFromRoot(selector.outputDir, rootDir)
     : path.join(config.outputDir ?? 'data', 'replay');
-  const replayManifestPath = selector.manifestPath === false
+  const replayManifestPath: string | false = selector.manifestPath === false
     ? false
     : selector.manifestPath
       ? resolvePathFromRoot(selector.manifestPath, rootDir)
@@ -224,19 +211,21 @@ export async function replayDataset<TInput>(
     rootDir,
   });
   const summary = summarize(results, Date.now() - startedAt);
-  const replay: DatasetReplayInfo = {
-    caseNumber: selected.caseNumber,
-    caseName: selected.name,
-    repeatIndex: selected.repeatIndex,
-    outputDir: path.resolve(replayOutputDir),
-  };
-  const manifest = await writeManifest(runConfig, results, summary, {
+  const manifest = (await writeManifest({
+    config: runConfig,
+    results,
+    summary,
     datasetFile: options.datasetFile ?? null,
     execution,
-    replay,
-  });
+    replay: {
+      caseNumber: selected.caseNumber,
+      caseName: selected.name,
+      repeatIndex: selected.repeatIndex,
+      outputDir: replayOutputDir,
+    },
+  }))?.manifest ?? null;
 
-  return { manifest, results, summary };
+  return { manifest, results, summary, executed: buildExecutedSummary(results, results) };
 }
 
 export function expandDatasetCases<TInput>(config: DatasetConfig<TInput>): ExpandedDatasetCase<TInput>[] {
@@ -318,6 +307,68 @@ export interface ExpandedDatasetCase<TInput> {
   seed: string;
 }
 
+type OnlyToken =
+  | { kind: 'number'; value: number }
+  | { kind: 'range'; from: number; to: number }
+  | { kind: 'name'; value: string };
+
+function parseOnlySpec(spec: string): OnlyToken[] {
+  return spec
+    .split(',')
+    .map(token => token.trim())
+    .filter(Boolean)
+    .map((token): OnlyToken => {
+      const range = /^(\d+)\s*-\s*(\d+)$/.exec(token);
+      if (range) {
+        const from = Number(range[1]);
+        const to = Number(range[2]);
+        return { kind: 'range', from: Math.min(from, to), to: Math.max(from, to) };
+      }
+      if (/^\d+$/.test(token)) return { kind: 'number', value: Number(token) };
+      return { kind: 'name', value: token };
+    });
+}
+
+/**
+ * Narrow an expanded case list down to what the caller asked for.
+ *
+ * `from` / `to` are inclusive case-number bounds; `only` accepts a comma separated mix of
+ * case numbers, inclusive ranges (`3-5`) and case names. Name matching is exact and applies
+ * to every repeat of that case.
+ */
+export function selectDatasetCases<TInput>(
+  cases: ExpandedDatasetCase<TInput>[],
+  selector?: DatasetCaseSelector | null,
+): ExpandedDatasetCase<TInput>[] {
+  if (!selector) return cases;
+
+  let selected = cases;
+  if (typeof selector.from === 'number') {
+    selected = selected.filter(item => item.caseNumber >= selector.from!);
+  }
+  if (typeof selector.to === 'number') {
+    selected = selected.filter(item => item.caseNumber <= selector.to!);
+  }
+
+  if (selector.only && selector.only.trim()) {
+    const tokens = parseOnlySpec(selector.only);
+    const names = new Set(tokens.filter(token => token.kind === 'name').map(token => (token as { value: string }).value));
+    const numbers = new Set<number>();
+    for (const token of tokens) {
+      if (token.kind === 'number') numbers.add(token.value);
+      else if (token.kind === 'range') {
+        for (let n = token.from; n <= token.to; n++) numbers.add(n);
+      }
+    }
+    selected = selected.filter(item => numbers.has(item.caseNumber) || names.has(item.name));
+  }
+
+  if (selected.length === 0) {
+    throw new Error(`Case selector matched no cases (only=${selector.only ?? '-'}, from=${selector.from ?? '-'}, to=${selector.to ?? '-'}).`);
+  }
+  return selected;
+}
+
 function selectReplayCase<TInput>(
   cases: ExpandedDatasetCase<TInput>[],
   selector: DatasetReplaySelector,
@@ -348,39 +399,218 @@ async function runDataset<TInput>(
 ): Promise<DatasetRunResult> {
   assertDataset(dataset);
   const rootDir = getDatasetRootDir(options.datasetFile);
-  const config = resolveConfigPaths(normalizeConfig({
-    ...dataset.config,
-    outputDir: options.outputDir ?? dataset.config.outputDir,
-    manifestPath: options.manifestPath ?? dataset.config.manifestPath,
-  }), options.datasetFile);
-  const cases = expandDatasetCases(config);
+  const baseConfig = resolveDatasetConfig(dataset, {
+    datasetFile: options.datasetFile,
+    outputDir: options.outputDir,
+    manifestPath: options.manifestPath,
+  });
+  const config: DatasetConfig<TInput> = options.caseConcurrency && options.caseConcurrency > 0
+    ? { ...baseConfig, caseConcurrency: Math.floor(options.caseConcurrency) }
+    : baseConfig;
+  const allCases = expandDatasetCases(config);
 
-  if (cases.length === 0) {
+  if (allCases.length === 0) {
     throw new Error('Dataset contains no cases.');
   }
 
+  const cases = selectDatasetCases(allCases, options.caseSelector);
+  const isPartialRun = Boolean(options.resume || options.caseSelector);
+
+  // A partial run (`--only`, `--resume`) must still emit a *complete* manifest: the cases it
+  // did not touch are carried over from the previous manifest instead of being dropped.
+  const previousManifestPath = defaultManifestPath(config);
+  const previousManifest = isPartialRun && options.mode === 'generate' && previousManifestPath
+    ? await loadPreviousManifest(previousManifestPath)
+    : null;
+  const manifestDir = previousManifestPath ? path.dirname(previousManifestPath) : process.cwd();
+
+  // `--resume` only trusts the previous manifest when the inputs that produced it are
+  // unchanged. A different maker.ts or std.py invalidates every case by definition.
+  const resumeTrusted = Boolean(options.resume) && previousManifest
+    ? await manifestSourcesMatch(previousManifest, options.datasetFile ?? null, config.solution)
+    : false;
+
+  const { pending, carryOver } = await planRun(
+    allCases,
+    cases,
+    previousManifest,
+    manifestDir,
+    resumeTrusted,
+  );
+
   const startedAt = Date.now();
-  const { results, execution } = await runCasePipeline(config, cases, options.mode, {
-    cleanOutputDir: options.cleanOutputDir,
+  // A partial run must never wipe the directory: `--only 3` would otherwise delete cases 1-2.
+  const cleanOutputDir = options.cleanOutputDir !== undefined
+    ? options.cleanOutputDir
+    : !(options.resume || options.caseSelector || options.prune);
+  const { results: fresh, execution } = await runCasePipeline(config, pending, options.mode, {
+    cleanOutputDir,
     outputDir: config.outputDir,
     rootDir,
+    ensureTrailingNewline: options.ensureTrailingNewline,
   });
+
+  const results = isPartialRun
+    ? mergeCaseRecords(allCases, carryOver, fresh)
+    : fresh;
+
+  if (options.prune && options.mode === 'generate') {
+    // Prune against every declared case, never against the selected subset — otherwise
+    // `--only 3 --prune` would delete cases 1, 2, 4…
+    await pruneOrphanArtifacts(
+      path.resolve(config.outputDir ?? 'data'),
+      new Set(allCases.map(item => item.caseNumber)),
+    );
+  }
+
   const summary = summarize(results, Date.now() - startedAt);
   const manifest = options.mode === 'generate'
-    ? await writeManifest(config, results, summary, {
+    ? (await writeManifest({
+      config,
+      results,
+      summary,
       datasetFile: options.datasetFile ?? null,
       execution,
-      replay: options.replay ?? null,
-    })
+      replay: options.replay
+        ? {
+          caseNumber: options.replay.caseNumber,
+          caseName: options.replay.caseName,
+          repeatIndex: options.replay.repeatIndex,
+          outputDir: options.replay.outputDir,
+        }
+        : null,
+    }))?.manifest ?? null
     : null;
 
-  return { manifest, results, summary };
+  return { manifest, results, summary, executed: buildExecutedSummary(results, fresh) };
+}
+
+async function manifestSourcesMatch(
+  manifest: DatasetManifest,
+  datasetFile: string | null,
+  solutionPath: string,
+): Promise<boolean> {
+  const makerOk = manifest.sources?.maker
+    ? await sourceMatches(manifest.sources.maker, datasetFile)
+    : true;
+  if (!makerOk) return false;
+  return sourceMatches(manifest.sources?.solution, solutionPath);
+}
+
+async function loadPreviousManifest(manifestPath: string): Promise<DatasetManifest | null> {
+  try {
+    return (await readManifest(manifestPath))?.manifest ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Decide which cases to run and which previous records to keep.
+ *
+ * `reuseValid` (from `--resume`) lets a selected case be skipped when the manifest already
+ * certifies it. Unselected cases are always carried over verbatim.
+ */
+async function planRun<TInput>(
+  allCases: ExpandedDatasetCase<TInput>[],
+  selected: ExpandedDatasetCase<TInput>[],
+  previous: DatasetManifest | null,
+  manifestDir: string,
+  reuseValid: boolean,
+): Promise<{ pending: ExpandedDatasetCase<TInput>[]; carryOver: Map<number, DatasetCaseRecord> }> {
+  const carryOver = new Map<number, DatasetCaseRecord>();
+  const pending: ExpandedDatasetCase<TInput>[] = [];
+  if (!previous) return { pending: [...selected], carryOver };
+
+  const byNumber = new Map(previous.cases.map(record => [record.caseNumber, record]));
+  const selectedNumbers = new Set(selected.map(item => item.caseNumber));
+
+  for (const item of selected) {
+    const record = byNumber.get(item.caseNumber);
+    const reusable = reuseValid
+      && record
+      && record.status === 'success'
+      && record.seed === item.seed
+      && await fileMatches(record.input, manifestDir)
+      && await fileMatches(record.output, manifestDir);
+    if (reusable) {
+      carryOver.set(item.caseNumber, record!);
+      continue;
+    }
+    pending.push(item);
+  }
+
+  for (const item of allCases) {
+    if (selectedNumbers.has(item.caseNumber)) continue;
+    const record = byNumber.get(item.caseNumber);
+    if (record) carryOver.set(item.caseNumber, record);
+  }
+
+  return { pending, carryOver };
+}
+
+async function fileMatches(ref: ManifestFileRef | null, baseDir: string): Promise<boolean> {
+  if (!ref) return false;
+  const absolutePath = path.isAbsolute(ref.path) ? ref.path : path.resolve(baseDir, ref.path);
+  try {
+    const digest = await digestFile(absolutePath);
+    return digest.sha256 === ref.sha256 && digest.bytes === ref.bytes;
+  } catch {
+    return false;
+  }
+}
+
+function mergeCaseRecords(
+  cases: ExpandedDatasetCase<unknown>[],
+  reused: Map<number, DatasetCaseRecord>,
+  fresh: DatasetCaseRecord[],
+): DatasetCaseRecord[] {
+  const freshByNumber = new Map(fresh.map(record => [record.caseNumber, record]));
+  return cases
+    .map(item => freshByNumber.get(item.caseNumber) ?? reused.get(item.caseNumber) ?? null)
+    .filter((record): record is DatasetCaseRecord => record !== null);
+}
+
+/** Delete numbered `.in` / `.out` files that no declared case owns any more. */
+async function pruneOrphanArtifacts(outputDir: string, declared: Set<number>): Promise<number> {
+  let entries: string[];
+  try {
+    entries = await fs.readdir(outputDir);
+  } catch {
+    return 0;
+  }
+
+  let removed = 0;
+  for (const name of entries) {
+    const match = /^(\d+)\.(?:in|out)$/.exec(name);
+    if (!match) continue;
+    if (declared.has(Number(match[1]))) continue;
+    await fs.rm(path.join(outputDir, name), { force: true });
+    removed++;
+  }
+  return removed;
 }
 
 function assertDataset<TInput>(dataset: Dataset<TInput>): void {
   if (!dataset || typeof dataset !== 'object' || dataset.__genesisDataset !== 2) {
     throw new Error('Invalid Genesis v2 dataset object.');
   }
+}
+
+/**
+ * Resolve a dataset's config the same way a run would, without touching any file.
+ * Shared with `checkDataset` so both agree on where the output and manifest live.
+ */
+export function resolveDatasetConfig<TInput>(
+  dataset: Dataset<TInput>,
+  options: { datasetFile?: string | null; outputDir?: string; manifestPath?: string | false } = {},
+): DatasetConfig<TInput> {
+  assertDataset(dataset);
+  return resolveConfigPaths(normalizeConfig({
+    ...dataset.config,
+    outputDir: options.outputDir ?? dataset.config.outputDir,
+    manifestPath: options.manifestPath ?? dataset.config.manifestPath,
+  }), options.datasetFile);
 }
 
 function normalizeConfig<TInput>(config: DatasetConfig<TInput>): DatasetConfig<TInput> {
@@ -433,7 +663,12 @@ async function runCasePipeline<TInput>(
   config: DatasetConfig<TInput>,
   cases: ExpandedDatasetCase<TInput>[],
   mode: 'generate' | 'validate',
-  options: { cleanOutputDir?: boolean; outputDir?: string; rootDir?: string } = {},
+  options: {
+    cleanOutputDir?: boolean;
+    outputDir?: string;
+    rootDir?: string;
+    ensureTrailingNewline?: boolean;
+  } = {},
 ): Promise<{ results: DatasetCaseRecord[]; execution: ExecutionResult | null }> {
   const preparedExecution = mode === 'generate'
     ? await prepareDatasetExecution(config)
@@ -455,7 +690,7 @@ async function runCasePipeline<TInput>(
   const running = new Set<Promise<void>>();
 
   const launch = (index: number) => {
-    const task = processCase(config, cases[index]!, mode, preparedExecution, outputDir)
+    const task = processCase(config, cases[index]!, mode, preparedExecution, outputDir, options)
       .then(result => {
         results[index] = result;
       })
@@ -484,6 +719,7 @@ async function processCase<TInput>(
   mode: 'generate' | 'validate',
   execution: ExecutionResult | null,
   outputDir: string,
+  options: { ensureTrailingNewline?: boolean } = {},
 ): Promise<DatasetCaseRecord> {
   const startedAt = Date.now();
   const phases = {
@@ -510,7 +746,7 @@ async function processCase<TInput>(
     currentPhase = 'format';
     const formatStarted = Date.now();
     const formatted = normalizeFormat(config.format(input as TInput));
-    const renderedInput = renderFormatDocument(formatted);
+    const renderedInput = applyTrailingNewline(renderFormatDocument(formatted), options.ensureTrailingNewline);
     phases.formatMs = Date.now() - formatStarted;
 
     currentPhase = 'validate';
@@ -606,12 +842,24 @@ async function runValidation<TInput>(
   input: TInput,
   context: DatasetValidationContext,
 ): Promise<DatasetValidationSummary> {
-  if (!config.validate) {
+  const hasConstraints = Boolean(config.constraints && Object.keys(config.constraints).length > 0);
+  if (!config.validate && !hasConstraints) {
     return { status: 'not-run', durationMs: 0 };
   }
 
   const startedAt = Date.now();
   try {
+    if (hasConstraints) {
+      const violation = checkConstraints(input, config.constraints as DatasetConstraints);
+      if (violation) {
+        return { status: 'failed', durationMs: Date.now() - startedAt, reason: violation };
+      }
+    }
+
+    if (!config.validate) {
+      return { status: 'passed', durationMs: Date.now() - startedAt };
+    }
+
     const result = await config.validate(input, context);
     const normalized = normalizeValidationResult(result);
     normalized.durationMs = Date.now() - startedAt;
@@ -719,7 +967,7 @@ function deriveCaseSeed(seed: string | number | bigint, caseIndex: number, caseN
     .digest('hex');
 }
 
-function summarize(results: DatasetCaseRecord[], durationMs: number): DatasetManifest['summary'] {
+function summarize(results: DatasetCaseRecord[], durationMs: number): DatasetManifestSummary {
   const succeeded = results.filter(result => result.status === 'success').length;
   return {
     totalCases: results.length,
@@ -729,88 +977,22 @@ function summarize(results: DatasetCaseRecord[], durationMs: number): DatasetMan
   };
 }
 
-async function writeManifest(
-  config: DatasetConfig<unknown>,
-  results: DatasetCaseRecord[],
-  summary: DatasetManifest['summary'],
-  context: {
-    datasetFile?: string | null;
-    execution?: ExecutionResult | null;
-    replay?: DatasetReplayInfo | null;
-  } = {},
-): Promise<DatasetManifest | null> {
-  const manifestPath = resolveManifestPath(config);
-  if (!manifestPath) return null;
+function applyTrailingNewline(text: string, enabled?: boolean): string {
+  if (!enabled || text.length === 0 || text.endsWith('\n')) return text;
+  return `${text}\n`;
+}
 
-  const manifest: DatasetManifest = {
-    version: 2,
-    tool: {
-      name: 'genesis-kit',
-      version,
-    },
-    generatedAt: new Date().toISOString(),
-    dataset: {
-      modulePath: context.datasetFile ? toProjectRelativePosix(path.resolve(context.datasetFile)) : null,
-      solution: toProjectRelativePosix(path.resolve(config.solution)),
-      outputDir: toProjectRelativePosix(path.resolve(config.outputDir ?? 'data')),
-      seed: String(config.seed),
-      startFrom: config.startFrom ?? 1,
-      runTimeoutMs: config.runTimeoutMs ?? 10000,
-      caseConcurrency: config.caseConcurrency ?? null,
-      compiler: config.compiler ?? null,
-      compilerFlags: [...(config.compilerFlags ?? [])],
-      ojProfile: config.ojProfile ?? null,
-      stackSizeBytes: config.stackSizeBytes ?? null,
-      manifestPath: manifestPath ? toProjectRelativePosix(manifestPath) : null,
-    },
-    execution: context.execution ? {
-      runArgs: [...context.execution.runArgs],
-      executablePath: context.execution.executablePath,
-      fingerprint: buildExecutionFingerprint(context.execution),
-    } : null,
-    replay: context.replay ?? null,
-    summary,
-    cases: results,
+function buildExecutedSummary(
+  allResults: DatasetCaseRecord[],
+  executedResults: DatasetCaseRecord[],
+): DatasetRunResult['executed'] {
+  const succeeded = executedResults.filter(result => result.status === 'success').length;
+  return {
+    totalCases: executedResults.length,
+    succeeded,
+    failed: executedResults.length - succeeded,
+    skipped: allResults.length - executedResults.length,
   };
-
-  await fs.mkdir(path.dirname(manifestPath), { recursive: true });
-  await fs.writeFile(manifestPath, JSON.stringify(manifest, null, 2) + '\n', 'utf8');
-  return manifest;
-}
-
-function buildExecutionFingerprint(execution: ExecutionResult): string {
-  return crypto.createHash('sha256')
-    .update(JSON.stringify({
-      runArgs: execution.runArgs,
-      executablePath: execution.executablePath,
-    }))
-    .digest('hex');
-}
-
-function resolveManifestPath(config: DatasetConfig<unknown>): string | null {
-  if (config.manifestPath === false) {
-    return null;
-  }
-  if (typeof config.manifestPath === 'string') {
-    return path.resolve(config.manifestPath);
-  }
-  const outputDir = path.resolve(config.outputDir ?? 'data');
-  const parentDir = path.dirname(outputDir);
-  const name = path.basename(outputDir) || 'data';
-  return path.join(parentDir, `${name}.manifest.json`);
-}
-
-function toPortablePath(filePath: string): string {
-  return filePath.split(path.sep).join(path.posix.sep).replaceAll(path.win32.sep, path.posix.sep);
-}
-
-function toProjectRelativePosix(filePath: string): string {
-  const absolutePath = path.resolve(filePath);
-  const relativePath = path.relative(process.cwd(), absolutePath);
-  if (relativePath && !relativePath.startsWith('..') && !path.isAbsolute(relativePath)) {
-    return toPortablePath(relativePath);
-  }
-  return toPortablePath(absolutePath);
 }
 
 function getDatasetRootDir(datasetFile?: string | null): string {
@@ -875,36 +1057,19 @@ async function runSolution(
   }
 }
 
-async function writeTextFile(filePath: string, text: string): Promise<DatasetFileRecord> {
+async function writeTextFile(filePath: string, text: string): Promise<ManifestFileRef> {
   await fs.mkdir(path.dirname(filePath), { recursive: true });
   await fs.writeFile(filePath, text, 'utf8');
   return describeFile(filePath);
 }
 
-async function describeFile(filePath: string): Promise<DatasetFileRecord> {
-  const stat = await fs.stat(filePath);
-  const sha256 = crypto.createHash('sha256');
-  let newlineCount = 0;
-
-  await new Promise<void>((resolve, reject) => {
-    const stream = createReadStream(filePath);
-    stream.on('data', (chunk: Buffer) => {
-      sha256.update(chunk);
-      for (const byte of chunk) {
-        if (byte === 0x0a) {
-          newlineCount++;
-        }
-      }
-    });
-    stream.once('error', reject);
-    stream.once('end', () => resolve());
-  });
-
+async function describeFile(filePath: string): Promise<ManifestFileRef> {
+  const digest = await digestFile(filePath);
   return {
-    path: toProjectRelativePosix(filePath),
-    sha256: sha256.digest('hex'),
-    bytes: stat.size,
-    lines: stat.size === 0 ? 0 : newlineCount + 1,
+    path: path.resolve(filePath),
+    sha256: digest.sha256,
+    bytes: digest.bytes,
+    lines: digest.lines,
   };
 }
 

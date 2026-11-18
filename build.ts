@@ -4,7 +4,8 @@ import { writeAiContractArtifacts } from './scripts/build-ai-contract';
 
 const OUT_DIR = 'dist';
 const BUN_OUT_DIR = path.join(OUT_DIR, 'bun');
-const EXTERNAL = ['typescript'];
+// `oxc-parser` ships platform-specific native binaries — it must stay external.
+const EXTERNAL = ['typescript', 'oxc-parser'];
 
 console.log('Generating AI contract artifacts...');
 try {
