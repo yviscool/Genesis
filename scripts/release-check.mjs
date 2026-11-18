@@ -61,20 +61,25 @@ function runNpm(args) {
  * `prepare` lifecycle script for git dependencies. `prepare` would rebuild dist for the
  * npm tarball, but the git tag would still point at whatever was committed, so a release
  * must not go out with a build that lags behind the source.
+ *
+ * Compares content, not stat. With `core.autocrlf=true` (the Windows default) a freshly
+ * written file can show up as ` M` in `git status` while its normalised blob is byte
+ * identical to the index — `git diff` is the one that knows the difference.
  */
 function assertDistMatchesSource() {
-  const status = spawnSync('git', ['status', '--porcelain', '--', 'dist'], {
-    cwd: root,
-    encoding: 'utf8',
-  });
-  // Not a git checkout (e.g. running from an extracted tarball) — nothing to compare.
-  if (status.status !== 0) return;
+  const git = (args) => spawnSync('git', args, { cwd: root, encoding: 'utf8' });
 
-  const dirty = status.stdout.trim();
-  if (!dirty) return;
+  // Not a git checkout (e.g. running from an extracted tarball) — nothing to compare.
+  if (git(['rev-parse', '--is-inside-work-tree']).status !== 0) return;
+
+  const changed = git(['diff', '--name-only', '--', 'dist']).stdout?.trim() ?? '';
+  const untracked = git(['ls-files', '--others', '--exclude-standard', '--', 'dist']).stdout?.trim() ?? '';
+  if (!changed && !untracked) return;
 
   throw new Error(
-    `committed dist/ does not match a fresh build — run \`bun run build\` and commit:\n${dirty}`,
+    `committed dist/ does not match a fresh build — run \`bun run build\` and commit:\n${[changed, untracked]
+      .filter(Boolean)
+      .join('\n')}`,
   );
 }
 

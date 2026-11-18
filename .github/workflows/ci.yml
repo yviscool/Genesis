@@ -35,8 +35,11 @@ jobs:
         if: matrix.os == 'ubuntu-latest' && matrix.node == 24
         shell: bash
         run: |
-          if [ -n "$(git status --porcelain -- dist)" ]; then
-            git status --porcelain -- dist
+          changed="$(git diff --name-only -- dist)"
+          untracked="$(git ls-files --others --exclude-standard -- dist)"
+          if [ -n "$changed" ] || [ -n "$untracked" ]; then
+            [ -n "$changed" ] && echo "$changed"
+            [ -n "$untracked" ] && echo "$untracked"
             echo "::error::committed dist/ is stale — run 'bun run build' and commit the result"
             exit 1
           fi
