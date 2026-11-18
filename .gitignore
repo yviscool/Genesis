@@ -144,6 +144,16 @@ examples/.ai-jobs/
 examples/ai-data/
 .tmp-*
 
-# Track publishable package output for git dependency consumers.
-!dist/
-!dist/**
+# dist/ is tracked on purpose.
+#
+# `bun add github:<user>/<repo>` blocks the `prepare` lifecycle script for
+# git dependencies, so a consumer that installs this repo by URL never gets a
+# build. Committing dist/ is the only way to keep that path working.
+#
+# Sourcemaps stay out of git: they are 62% of dist/ and are useless to git
+# consumers. They are still shipped in the npm tarball, because `files` in
+# package.json is a whitelist that npm applies independently of this file.
+#
+# If you ever stop supporting git installs, delete this block, `git rm -r
+# --cached dist` and drop `prepare` in favour of `prepack`.
+dist/**/*.map

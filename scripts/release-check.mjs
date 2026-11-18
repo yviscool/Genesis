@@ -56,12 +56,35 @@ function runNpm(args) {
   run('npm', args);
 }
 
+/**
+ * dist/ is committed so that `bun add github:<user>/<repo>` works — bun blocks the
+ * `prepare` lifecycle script for git dependencies. `prepare` would rebuild dist for the
+ * npm tarball, but the git tag would still point at whatever was committed, so a release
+ * must not go out with a build that lags behind the source.
+ */
+function assertDistMatchesSource() {
+  const status = spawnSync('git', ['status', '--porcelain', '--', 'dist'], {
+    cwd: root,
+    encoding: 'utf8',
+  });
+  // Not a git checkout (e.g. running from an extracted tarball) — nothing to compare.
+  if (status.status !== 0) return;
+
+  const dirty = status.stdout.trim();
+  if (!dirty) return;
+
+  throw new Error(
+    `committed dist/ does not match a fresh build — run \`bun run build\` and commit:\n${dirty}`,
+  );
+}
+
 async function main() {
   const tmpDir = await fs.mkdtemp(path.join(root, '.tmp-release-check-'));
 
   try {
     run('bun', ['test']);
     runWithRetry('bun', ['run', 'build']);
+    assertDistMatchesSource();
     run('node', ['dist/cli.js', '--help']);
     run('node', ['-e', "const kit = require('./dist/index.js'); if (typeof kit.defineDataset !== 'function') process.exit(1);"]);
     run('node', ['--input-type=module', '-e', "const kit = await import('./dist/index.mjs'); if (typeof kit.defineDataset !== 'function') process.exit(1);"]);

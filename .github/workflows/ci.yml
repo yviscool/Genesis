@@ -25,6 +25,22 @@ jobs:
       - run: bun install --frozen-lockfile
       - run: bun test
       - run: bun run build
+
+      # dist/ is committed because `bun add github:<user>/<repo>` blocks the
+      # `prepare` script for git dependencies. That guarantee only holds while
+      # the committed build matches the source, so verify it here — on a single
+      # runner, since the point is "someone rebuilt and committed", not
+      # "every platform byte-matches".
+      - name: Verify committed dist/ matches a fresh build
+        if: matrix.os == 'ubuntu-latest' && matrix.node == 24
+        shell: bash
+        run: |
+          if [ -n "$(git status --porcelain -- dist)" ]; then
+            git status --porcelain -- dist
+            echo "::error::committed dist/ is stale — run 'bun run build' and commit the result"
+            exit 1
+          fi
+
       - run: node dist/cli.js --help
       - run: node --input-type=module -e "const kit = await import('./dist/index.mjs'); if (typeof kit.defineDataset !== 'function') process.exit(1)"
       - run: node -e "const kit = require('./dist/index.js'); if (typeof kit.defineDataset !== 'function') process.exit(1)"
